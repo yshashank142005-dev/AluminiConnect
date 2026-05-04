@@ -1,36 +1,101 @@
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
 
-// Real schema: type (not eventType), venue (not location), rsvpList, meetingLink, isPublished
 const EVENT_TYPES = ['All', 'webinar', 'workshop', 'networking', 'reunion', 'career_fair', 'other'];
 
-const EventCard = ({ event, currentUserId, onRSVP, onDelete }) => {
+const TYPE_ICONS = {
+  webinar: '📡', workshop: '🛠', networking: '🔗',
+  reunion: '🎓', career_fair: '💼', other: '📌',
+};
+
+/* ── Skeleton card ── */
+const SkeletonCard = () => (
+  <div className="card card-p" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="skeleton-shimmer" style={{ height: '18px', width: '55%', borderRadius: '6px' }} />
+        <div className="skeleton-shimmer" style={{ height: '14px', width: '80%', borderRadius: '6px' }} />
+      </div>
+      <div className="skeleton-shimmer" style={{ width: '40px', height: '48px', borderRadius: '8px' }} />
+    </div>
+    <div className="skeleton-shimmer" style={{ height: '40px', borderRadius: '6px' }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div className="skeleton-shimmer" style={{ height: '12px', width: '60%', borderRadius: '4px' }} />
+      <div className="skeleton-shimmer" style={{ height: '12px', width: '45%', borderRadius: '4px' }} />
+    </div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
+      <div className="skeleton-shimmer" style={{ height: '12px', width: '100px', borderRadius: '4px' }} />
+      <div className="skeleton-shimmer" style={{ height: '32px', width: '90px', borderRadius: '8px' }} />
+    </div>
+  </div>
+);
+
+/* ── Event Card ── */
+const EventCard = ({ event, currentUserId, onRSVP, onDelete, index = 0 }) => {
   const isAttending = event.rsvpList?.some(r => (r.user?._id || r.user) === currentUserId);
   const attendeeCount = event.rsvpList?.length || 0;
   const isFull = event.maxAttendees > 0 && attendeeCount >= event.maxAttendees;
   const isOrganizer = event.organizer?._id === currentUserId;
   const isPast = new Date(event.date) < new Date();
+  const daysUntil = Math.ceil((new Date(event.date) - new Date()) / (1000 * 60 * 60 * 24));
+  const typeIcon = TYPE_ICONS[event.type] || '📌';
 
   return (
-    <div className="card card-p animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+    <motion.div
+      className="card card-p event-card-enhanced"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.06, type: 'spring', stiffness: 340, damping: 28 }}
+      whileHover={{ y: -4 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: 'relative', overflow: 'hidden' }}
+    >
+      {/* accent stripe */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
+        background: isAttending
+          ? 'linear-gradient(90deg, var(--success), #34d399)'
+          : isPast
+          ? 'rgba(255,255,255,0.08)'
+          : 'linear-gradient(90deg, var(--accent), var(--accent2))',
+      }} />
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', paddingTop: '6px' }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-            <span className="tag tag-cyan" style={{ fontSize: '11px', textTransform: 'capitalize' }}>
-              {event.type?.replace('_', ' ')}
+            <span className="tag tag-cyan" style={{ fontSize: '11px', textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {typeIcon} {event.type?.replace('_', ' ')}
             </span>
             {isPast && <span className="tag" style={{ fontSize: '11px', background: 'rgba(100,100,100,0.15)', color: 'var(--text-muted)', borderColor: 'transparent' }}>Past</span>}
-            {isAttending && <span className="tag tag-green" style={{ fontSize: '11px' }}>✓ Attending</span>}
+            {isAttending && (
+              <motion.span
+                className="tag tag-green"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                style={{ fontSize: '11px' }}
+              >
+                ✓ You're in!
+              </motion.span>
+            )}
+            {!isPast && !isAttending && daysUntil <= 7 && daysUntil > 0 && (
+              <span className="tag tag-orange" style={{ fontSize: '11px' }}>⚡ {daysUntil}d left</span>
+            )}
           </div>
           <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>{event.title}</h3>
         </div>
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--accent-light)', lineHeight: 1 }}>
+
+        {/* Date badge */}
+        <div style={{
+          textAlign: 'center', flexShrink: 0,
+          background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)',
+          borderRadius: '10px', padding: '6px 10px', minWidth: '44px',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--accent-light)', lineHeight: 1 }}>
             {new Date(event.date).getDate()}
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
             {new Date(event.date).toLocaleString('default', { month: 'short' })}
           </div>
         </div>
@@ -58,6 +123,25 @@ const EventCard = ({ event, currentUserId, onRSVP, onDelete }) => {
         )}
       </div>
 
+      {/* Attendee progress bar */}
+      {event.maxAttendees > 0 && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
+            <span>👥 {attendeeCount} attending</span>
+            <span>{event.maxAttendees - attendeeCount > 0 ? `${event.maxAttendees - attendeeCount} spots left` : '🔒 Full'}</span>
+          </div>
+          <div className="progress-bar" style={{ height: '4px' }}>
+            <motion.div
+              className="progress-fill"
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.min(100, (attendeeCount / event.maxAttendees) * 100)}%` }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              style={{ background: isFull ? 'var(--danger)' : undefined }}
+            />
+          </div>
+        </div>
+      )}
+
       {event.tags?.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           {event.tags.map(t => <span key={t} className="tag" style={{ fontSize: '11px' }}>#{t}</span>)}
@@ -66,34 +150,57 @@ const EventCard = ({ event, currentUserId, onRSVP, onDelete }) => {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
         <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          👥 {attendeeCount}{event.maxAttendees > 0 ? ` / ${event.maxAttendees}` : ''} attending
+          {!event.maxAttendees || event.maxAttendees === 0
+            ? `👥 ${attendeeCount} attending`
+            : ''}
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           {isOrganizer && (
-            <button onClick={() => onDelete(event._id)} className="btn btn-danger btn-sm">Delete</button>
+            <motion.button onClick={() => onDelete(event._id)} className="btn btn-danger btn-sm" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>Delete</motion.button>
           )}
           {event.meetingLink && !isPast && (
             <a href={event.meetingLink} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">🔗 Join</a>
           )}
           {!isPast && (
-            <button onClick={() => onRSVP(event._id)} className={`btn btn-sm ${isAttending ? 'btn-secondary' : 'btn-primary'}`} disabled={!isAttending && isFull}>
+            <motion.button
+              onClick={() => onRSVP(event._id)}
+              className={`btn btn-sm ${isAttending ? 'btn-secondary' : 'btn-primary'}`}
+              disabled={!isAttending && isFull}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.95 }}
+            >
               {isAttending ? '✓ Cancel RSVP' : isFull ? '🔒 Full' : '+ RSVP'}
-            </button>
+            </motion.button>
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
+/* ── Create Event Modal ── */
 const CreateEventModal = ({ onClose, onSubmit }) => {
   const [form, setForm] = useState({ title: '', description: '', date: '', time: '10:00', venue: 'Online', type: 'webinar', maxAttendees: '', meetingLink: '' });
   const [loading, setLoading] = useState(false);
   const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', overflowY: 'auto' }} onClick={onClose}>
-      <div className="card" style={{ width: '100%', maxWidth: '520px', padding: '28px', animation: 'fadeIn 0.2s ease', margin: 'auto' }} onClick={e => e.stopPropagation()}>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', overflowY: 'auto' }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="card"
+        style={{ width: '100%', maxWidth: '520px', padding: '28px', margin: 'auto' }}
+        onClick={e => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+      >
         <h3 style={{ fontWeight: 700, marginBottom: '20px' }}>📅 Create Event</h3>
         <div className="flex-col gap-14">
           <div className="form-group"><label className="label">Title *</label><input className="input" placeholder="e.g. Tech Career Panel" value={form.title} onChange={e => upd('title', e.target.value)} /></div>
@@ -114,16 +221,23 @@ const CreateEventModal = ({ onClose, onSubmit }) => {
           <div className="form-group"><label className="label">Meeting Link</label><input className="input" placeholder="https://zoom.us/..." value={form.meetingLink} onChange={e => upd('meetingLink', e.target.value)} /></div>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button onClick={onClose} className="btn btn-secondary flex-1">Cancel</button>
-            <button onClick={async () => { setLoading(true); await onSubmit(form); setLoading(false); }} className="btn btn-primary flex-1" disabled={loading}>
+            <motion.button
+              onClick={async () => { setLoading(true); await onSubmit(form); setLoading(false); }}
+              className="btn btn-primary flex-1"
+              disabled={loading}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+            >
               {loading ? <span className="spinner spinner-sm" /> : '✅ Create Event'}
-            </button>
+            </motion.button>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };
 
+/* ── Page ── */
 export default function EventsPage() {
   const { user } = useAuth();
   const [events, setEvents] = useState([]);
@@ -172,7 +286,8 @@ export default function EventsPage() {
   };
 
   return (
-    <div className="page animate-fade">
+    <motion.div className="page" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+      {/* Hero */}
       <div className="page-hero">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
@@ -180,36 +295,106 @@ export default function EventsPage() {
             <p style={{ color: 'var(--text-secondary)' }}>Webinars, workshops, and networking events hosted by alumni.</p>
           </div>
           {['alumni', 'admin'].includes(user?.role) && (
-            <button onClick={() => setShowCreate(true)} className="btn btn-primary">+ Create Event</button>
+            <motion.button
+              onClick={() => setShowCreate(true)}
+              className="btn btn-primary"
+              whileHover={{ scale: 1.04, y: -2 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              + Create Event
+            </motion.button>
           )}
         </div>
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      {/* Filter chips */}
+      <motion.div
+        style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+      >
         {EVENT_TYPES.map(t => (
-          <button key={t} onClick={() => setFilter(t)} className="btn btn-sm" style={{ background: filter === t ? 'rgba(124,58,237,0.2)' : 'var(--bg-card)', color: filter === t ? 'var(--accent-light)' : 'var(--text-secondary)', border: `1px solid ${filter === t ? 'var(--accent)' : 'var(--border)'}`, textTransform: 'capitalize' }}>
-            {t === 'All' ? t : t.replace('_', ' ')}
-          </button>
+          <motion.button
+            key={t}
+            onClick={() => setFilter(t)}
+            className="btn btn-sm"
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
+            style={{
+              background: filter === t ? 'rgba(124,58,237,0.2)' : 'var(--bg-card)',
+              color: filter === t ? 'var(--accent-light)' : 'var(--text-secondary)',
+              border: `1px solid ${filter === t ? 'var(--accent)' : 'var(--border)'}`,
+              textTransform: 'capitalize',
+            }}
+          >
+            {t === 'All' ? '🌐 All' : `${TYPE_ICONS[t] || ''} ${t.replace('_', ' ')}`}
+          </motion.button>
         ))}
-        <button onClick={() => setUpcomingOnly(v => !v)} className="btn btn-sm" style={{ background: upcomingOnly ? 'rgba(6,182,212,0.15)' : 'var(--bg-card)', color: upcomingOnly ? 'var(--info)' : 'var(--text-secondary)', border: `1px solid ${upcomingOnly ? 'rgba(6,182,212,0.4)' : 'var(--border)'}` }}>
+        <motion.button
+          onClick={() => setUpcomingOnly(v => !v)}
+          className="btn btn-sm"
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.96 }}
+          style={{
+            background: upcomingOnly ? 'rgba(6,182,212,0.15)' : 'var(--bg-card)',
+            color: upcomingOnly ? 'var(--info)' : 'var(--text-secondary)',
+            border: `1px solid ${upcomingOnly ? 'rgba(6,182,212,0.4)' : 'var(--border)'}`,
+          }}
+        >
           {upcomingOnly ? '🗓 Upcoming Only' : '📋 All Events'}
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
 
+      {/* Content */}
       {loading ? (
-        <div className="loading-screen" style={{ minHeight: '40vh' }}><div className="spinner" /></div>
+        <div className="grid-3">
+          {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
+        </div>
       ) : events.length === 0 ? (
-        <div className="empty-state card card-p"><div className="empty-icon">📅</div><h3>No events found</h3><p>Check back soon or create one!</p></div>
+        <motion.div
+          className="empty-state card card-p"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+          style={{ padding: '64px 24px' }}
+        >
+          <motion.span
+            style={{ fontSize: '56px', marginBottom: '8px', display: 'block' }}
+            animate={{ rotate: [0, -8, 8, -4, 4, 0] }}
+            transition={{ duration: 1.2, delay: 0.3 }}
+          >🗓</motion.span>
+          <h3>No events yet!</h3>
+          <p style={{ maxWidth: '340px', marginTop: '6px', fontSize: '14px' }}>
+            {filter !== 'All'
+              ? `No ${filter.replace('_', ' ')} events right now. Try a different category.`
+              : upcomingOnly
+              ? "It's quiet on the calendar. Check back soon — events are being planned!"
+              : 'No events have been created yet. Be the first to host one!'}
+          </p>
+          {['alumni', 'admin'].includes(user?.role) && (
+            <motion.button
+              onClick={() => setShowCreate(true)}
+              className="btn btn-primary"
+              style={{ marginTop: '20px' }}
+              whileHover={{ scale: 1.04, y: -2 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              + Host an Event
+            </motion.button>
+          )}
+        </motion.div>
       ) : (
         <div className="grid-3">
-          {events.map(event => (
-            <EventCard key={event._id} event={event} currentUserId={user?._id} onRSVP={handleRSVP} onDelete={handleDelete} />
+          {events.map((event, i) => (
+            <EventCard key={event._id} event={event} index={i} currentUserId={user?._id} onRSVP={handleRSVP} onDelete={handleDelete} />
           ))}
         </div>
       )}
 
-      {showCreate && <CreateEventModal onClose={() => setShowCreate(false)} onSubmit={handleCreate} />}
-    </div>
+      <AnimatePresence>
+        {showCreate && <CreateEventModal onClose={() => setShowCreate(false)} onSubmit={handleCreate} />}
+      </AnimatePresence>
+    </motion.div>
   );
 }

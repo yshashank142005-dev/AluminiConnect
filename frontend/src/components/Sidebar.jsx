@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -13,6 +13,14 @@ const navItems = [
   { to: '/career-ai', icon: '🤖', label: 'Career AI' },
 ];
 
+// Determine user level from engagement score
+const getLevel = (score = 0) => {
+  if (score >= 500) return { label: 'Legend', color: '#f59e0b', emoji: '👑' };
+  if (score >= 200) return { label: 'Expert', color: '#a78bfa', emoji: '🔮' };
+  if (score >= 80)  return { label: 'Rising', color: '#10b981', emoji: '🌟' };
+  return { label: 'Newcomer', color: '#06b6d4', emoji: '🚀' };
+};
+
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -24,17 +32,20 @@ export default function Sidebar() {
   };
 
   const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+  const level = getLevel(user?.engagementScore);
+  const streak = 3; // would come from backend in a real app
 
   return (
     <aside style={{
       position: 'fixed', left: 0, top: 0, bottom: 0,
       width: 'var(--sidebar-width)',
-      background: 'rgba(13,17,32,0.95)',
-      backdropFilter: 'blur(20px)',
+      background: 'rgba(13,17,32,0.97)',
+      backdropFilter: 'blur(24px)',
       borderRight: '1px solid var(--border)',
       display: 'flex', flexDirection: 'column',
       zIndex: 100, padding: '0 12px',
     }}>
+      {/* Logo */}
       <motion.div
         style={{ padding: '20px 12px', borderBottom: '1px solid var(--border)', marginBottom: '8px' }}
         initial={{ opacity: 0, x: -12 }}
@@ -61,6 +72,7 @@ export default function Sidebar() {
         </div>
       </motion.div>
 
+      {/* Nav Items */}
       <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }}>
         {navItems.map(({ to, icon, label }, i) => (
           <motion.div
@@ -86,18 +98,48 @@ export default function Sidebar() {
         ))}
       </nav>
 
+      {/* Streak Banner */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        style={{
+          margin: '8px 0',
+          padding: '10px 12px',
+          borderRadius: 'var(--radius)',
+          background: 'linear-gradient(135deg, rgba(249,115,22,0.12), rgba(239,68,68,0.06))',
+          border: '1px solid rgba(249,115,22,0.25)',
+          display: 'flex', alignItems: 'center', gap: '10px',
+        }}
+      >
+        <span className="streak-flame" style={{ fontSize: '20px' }}>🔥</span>
+        <div>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#f97316' }}>{streak}-Day Streak!</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Log in tomorrow to extend</div>
+        </div>
+      </motion.div>
+
+      {/* User Footer */}
       <div style={{ padding: '12px 0', borderTop: '1px solid var(--border)' }}>
         <NavLink
           to="/profile"
           className="sidebar-nav-link"
-          style={{ color: 'var(--text-primary)' }}
+          style={{ color: 'var(--text-primary)', alignItems: 'flex-start', gap: '10px' }}
           onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-card)'; }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
         >
-          <motion.div className="avatar avatar-sm" style={{ fontSize: '12px' }} whileHover={{ scale: 1.08 }}>{initials}</motion.div>
+          <motion.div
+            className="avatar avatar-sm"
+            style={{ fontSize: '12px', flexShrink: 0, boxShadow: `0 0 12px ${level.color}55` }}
+            whileHover={{ scale: 1.1 }}
+          >
+            {initials}
+          </motion.div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.name}</div>
-            <div style={{ fontSize: '11px', color: 'var(--accent-light)', textTransform: 'capitalize' }}>{user?.role}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
+              <span style={{ fontSize: '11px', color: level.color, fontWeight: 700 }}>{level.emoji} {level.label}</span>
+            </div>
           </div>
         </NavLink>
         <motion.button
@@ -105,7 +147,7 @@ export default function Sidebar() {
           onClick={handleLogout}
           className="btn btn-ghost"
           style={{ width: '100%', justifyContent: 'flex-start', marginTop: '2px', fontSize: '13px', color: 'var(--text-muted)' }}
-          whileHover={{ x: 2, color: 'var(--text-secondary)' }}
+          whileHover={{ x: 2 }}
           whileTap={{ scale: 0.98 }}
         >
           <span>🚪</span> Sign out

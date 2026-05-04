@@ -1,6 +1,6 @@
 /**
  * AI Service — OpenAI integration with mock fallback
- * Used for career path generation, icebreakers, and chatbot
+ * Used for career path generation, icebreakers, chatbot, daily coach, and digital twin
  */
 
 let openai = null;
@@ -263,4 +263,317 @@ const getMockChatbotReply = (message) => {
   return `🤖 Great question! I'm here to help with your career journey. I can assist with:\n• **Career path planning** — skills to learn, roles to target\n• **Interview preparation** — technical & behavioral\n• **Resume review** — make it stand out\n• **Networking strategies** — connect with the right people\n• **Salary negotiation** — get what you deserve\n\nWhat specific aspect would you like to dive into?`;
 };
 
-module.exports = { generateCareerPath, generateIcebreaker, chatbotReply };
+// ─── Daily Coach Generator ────────────────────────────────────────────────────
+const generateDailyCoach = async (userProfile = {}) => {
+  const {
+    name = 'there',
+    role = 'student',
+    skills = [],
+    careerInterests = [],
+    goals = '',
+    engagementScore = 0,
+    connections = [],
+    badges = [],
+    department = '',
+  } = userProfile;
+
+  // Date-based seed so the tip refreshes once a day
+  const today = new Date().toISOString().slice(0, 10);
+
+  const prompt = `You are a smart, warm, and motivating AI daily coach for an alumni-student networking platform called AlumniConnect.
+
+Generate ONE personalized action for today for this user. Keep it short, specific, and immediately actionable (not generic).
+
+User Profile:
+- Name: ${name}
+- Role: ${role}
+- Skills: ${skills.join(', ') || 'none listed yet'}
+- Career Interests: ${careerInterests.join(', ') || 'not set'}
+- Goals: ${goals || 'not set'}
+- Department: ${department || 'not set'}
+- Engagement Score: ${engagementScore} XP
+- Connections Made: ${Array.isArray(connections) ? connections.length : 0}
+- Badges Earned: ${Array.isArray(badges) ? badges.length : 0}
+- Today's Date: ${today}
+
+Return ONLY valid JSON, no markdown, no extra text:
+{
+  "action": "Short imperative action sentence (max 15 words)",
+  "why": "1-sentence reason why this matters for their career (max 20 words)",
+  "category": "one of: networking | skills | profile | jobs | mentorship | events",
+  "emoji": "single relevant emoji",
+  "xpReward": number between 5 and 25,
+  "link": "one of: /alumni | /jobs | /mentorship | /events | /career-ai | /profile | /messages"
+}`;
+
+  if (openai) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.75,
+        max_tokens: 250,
+        response_format: { type: 'json_object' },
+      });
+      const parsed = JSON.parse(completion.choices[0].message.content);
+      return { ...parsed, date: today, generatedAt: new Date().toISOString() };
+    } catch (err) {
+      console.error('OpenAI daily coach error:', err.message);
+      return getMockDailyCoach(userProfile, today);
+    }
+  }
+
+  return getMockDailyCoach(userProfile, today);
+};
+
+const getMockDailyCoach = (userProfile = {}, today = '') => {
+  const { skills = [], connections = [], engagementScore = 0, goals = '', careerInterests = [], badges = [], role = 'student' } = userProfile;
+
+  // Deterministic seed from date so tip doesn't change on re-render
+  const dateSeed = today.replace(/-/g, '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+
+  const hasNoSkills = !skills || skills.length < 2;
+  const hasNoGoals = !goals || goals.trim() === '';
+  const hasNoConnections = !connections || connections.length < 3;
+  const hasNoInterests = !careerInterests || careerInterests.length === 0;
+  const lowEngagement = engagementScore < 20;
+  const hasNoBadges = !badges || badges.length === 0;
+
+  const pools = {
+    profile: [
+      { action: 'Add at least 3 skills to your profile today', why: 'Profiles with skills get 5× more mentor matches.', emoji: '🛠️', xpReward: 15, link: '/profile' },
+      { action: 'Write a 2-sentence bio that highlights your goals', why: 'A clear bio increases connection requests by 3×.', emoji: '✍️', xpReward: 10, link: '/profile' },
+      { action: 'Set your graduation year and department on your profile', why: 'Completing your profile unlocks AI mentor matching.', emoji: '🎓', xpReward: 10, link: '/profile' },
+    ],
+    networking: [
+      { action: 'Send a connection request to one new alumni today', why: 'Expanding your network opens referral opportunities.', emoji: '🤝', xpReward: 20, link: '/alumni' },
+      { action: 'Browse alumni in your target industry and follow 2', why: 'Industry connections increase job referral chances by 70%.', emoji: '🌐', xpReward: 15, link: '/alumni' },
+      { action: 'Check who viewed your profile and reach out to them', why: 'Timely responses double your connection success rate.', emoji: '👀', xpReward: 20, link: '/alumni' },
+    ],
+    skills: [
+      { action: 'Solve one coding problem on LeetCode or HackerRank', why: 'Daily practice is the fastest path to interview readiness.', emoji: '💻', xpReward: 15, link: '/career-ai' },
+      { action: 'Identify one skill gap and find a free course for it', why: 'Targeted learning is 3× more effective than random study.', emoji: '📚', xpReward: 10, link: '/career-ai' },
+      { action: 'Ask Career AI to generate your personalized skill roadmap', why: 'A roadmap reduces goal confusion and boosts consistency.', emoji: '🗺️', xpReward: 25, link: '/career-ai' },
+    ],
+    mentorship: [
+      { action: 'Request a mentorship session from a top-matched alumni', why: 'One mentor session can fast-track your career by months.', emoji: '🧭', xpReward: 25, link: '/mentorship' },
+      { action: 'Prepare 3 specific questions before your next mentor chat', why: 'Prepared questions make sessions 4× more productive.', emoji: '🗣️', xpReward: 10, link: '/mentorship' },
+      { action: 'Browse open mentorship slots and book one for this week', why: 'Consistent mentorship improves career satisfaction by 80%.', emoji: '📅', xpReward: 20, link: '/mentorship' },
+    ],
+    jobs: [
+      { action: 'Apply to one job listing that matches your skills today', why: 'Consistency in applying is the top predictor of offers.', emoji: '🚀', xpReward: 20, link: '/jobs' },
+      { action: 'Filter jobs by referral availability and reach out', why: 'Referred candidates are 4× more likely to get hired.', emoji: '📨', xpReward: 25, link: '/jobs' },
+      { action: 'Update your resume and tailor it to one job posting', why: 'Tailored resumes have a 40% higher callback rate.', emoji: '📄', xpReward: 15, link: '/jobs' },
+    ],
+    events: [
+      { action: 'RSVP to one upcoming alumni event this week', why: 'Events are the fastest way to build real connections.', emoji: '🎤', xpReward: 15, link: '/events' },
+      { action: 'Attend an online workshop and take one key note', why: 'Active learners land jobs 2× faster than passive ones.', emoji: '🎓', xpReward: 10, link: '/events' },
+    ],
+    goals: [
+      { action: 'Define your top career goal and set a 30-day milestone', why: 'Written goals are 42% more likely to be achieved.', emoji: '🎯', xpReward: 15, link: '/career-ai' },
+    ],
+  };
+
+  // Priority: fix biggest gaps first
+  let category = 'networking';
+  if (hasNoSkills) category = 'profile';
+  else if (hasNoGoals && hasNoInterests) category = 'goals';
+  else if (hasNoConnections) category = 'networking';
+  else if (lowEngagement) category = 'skills';
+  else if (hasNoBadges) category = 'events';
+  else {
+    // Use date seed to rotate through categories
+    const cats = ['networking', 'skills', 'jobs', 'mentorship', 'events', 'profile'];
+    category = cats[dateSeed % cats.length];
+  }
+
+  const pool = pools[category] || pools.networking;
+  const tip = pool[dateSeed % pool.length];
+
+  return {
+    ...tip,
+    category,
+    date: today,
+    generatedAt: new Date().toISOString(),
+  };
+};
+
+// ─── Digital Twin — 7-Day Projection Engine ───────────────────────────────────
+const generateDigitalTwin = (userProfile = {}) => {
+  const {
+    engagementScore = 0,
+    connections = [],
+    badges = [],
+    skills = [],
+    careerInterests = [],
+    goals = '',
+    bio = '',
+    profilePhoto = '',
+    department = '',
+    graduationYear,
+    name = '',
+    role = 'student',
+    createdAt,
+    lastSeen,
+  } = userProfile;
+
+  // ── 1. Profile Strength (0–100) ───────────────────────────────────────────
+  const profilePoints = {
+    name:            name ? 10 : 0,
+    bio:             bio ? 15 : 0,
+    department:      department ? 10 : 0,
+    graduationYear:  graduationYear ? 10 : 0,
+    skills:          (skills?.length || 0) >= 2 ? 15 : (skills?.length || 0) >= 1 ? 7 : 0,
+    careerInterests: (careerInterests?.length || 0) >= 1 ? 10 : 0,
+    goals:           goals ? 10 : 0,
+    profilePhoto:    profilePhoto ? 10 : 0,
+    connections:     (connections?.length || 0) >= 1 ? 10 : 0,
+  };
+  const profileStrength = Math.min(100, Object.values(profilePoints).reduce((a, b) => a + b, 0));
+  const missingProfilePoints = 100 - profileStrength;
+
+  // ── 2. Account Age & Daily Rates ─────────────────────────────────────────
+  const joinedMs = createdAt ? new Date(createdAt).getTime() : Date.now() - 7 * 86400000;
+  const daysSinceJoined = Math.max(1, Math.floor((Date.now() - joinedMs) / 86400000));
+
+  const xpPerDay      = Math.max(1.5, engagementScore / daysSinceJoined);
+  const connPerDay    = (connections?.length || 0) / daysSinceJoined;
+
+  // ── 3. Activity Multiplier (recent login bonus) ───────────────────────────
+  const lastSeenMs    = lastSeen ? new Date(lastSeen).getTime() : Date.now();
+  const daysSinceActive = Math.floor((Date.now() - lastSeenMs) / 86400000);
+  const activityMult  = daysSinceActive === 0 ? 1.2 : daysSinceActive <= 1 ? 1.0 : 0.75;
+
+  // ── 4. Job Readiness (0–100) ──────────────────────────────────────────────
+  const jobReadiness = Math.min(100, Math.round(
+    (skills?.length || 0) * 6 +
+    (connections?.length || 0) * 4 +
+    (badges?.length || 0) * 8 +
+    profileStrength * 0.35 +
+    (goals ? 8 : 0) +
+    (careerInterests?.length ? 5 : 0)
+  ));
+
+  // ── 5. 7-Day Forecast ────────────────────────────────────────────────────
+  // Tiny deterministic jitter per day (no Math.random — reproducible)
+  const jitterFn = (day, base) => {
+    const j = ((day * 17 + base) % 7) - 3; // -3..+3
+    return j * 0.3;
+  };
+
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dailyForecast = [];
+  let runningXp   = engagementScore;
+  let runningConn = connections?.length || 0;
+  let runningProf = profileStrength;
+
+  for (let d = 1; d <= 7; d++) {
+    const date = new Date(Date.now() + d * 86400000);
+    const dayLabel = days[date.getDay()];
+    const dateStr  = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    const xpGain   = Math.max(1, Math.round((xpPerDay * activityMult) + jitterFn(d, engagementScore)));
+    const connGain = connPerDay > 0.15 && d % 3 === 1 ? 1 : 0;
+    const profGain = missingProfilePoints > 5 && d % 4 === 2 ? Math.min(5, Math.round(missingProfilePoints * 0.1)) : 0;
+
+    runningXp   += xpGain;
+    runningConn += connGain;
+    runningProf  = Math.min(100, runningProf + profGain);
+
+    dailyForecast.push({
+      day:        d,
+      label:      dayLabel,
+      date:       dateStr,
+      xpGain,
+      xpTotal:    Math.round(runningXp),
+      connGain,
+      connTotal:  runningConn,
+      profilePct: Math.round(runningProf),
+    });
+  }
+
+  const finalDay  = dailyForecast[6];
+  const totalXpGained   = finalDay.xpTotal   - engagementScore;
+  const totalConnGained = finalDay.connTotal  - (connections?.length || 0);
+
+  // ── 6. Milestone Detection ────────────────────────────────────────────────
+  const milestones = [];
+  const xpThresholds = [25, 50, 100, 200, 500];
+  xpThresholds.forEach(threshold => {
+    if (engagementScore < threshold) {
+      const dayToHit = dailyForecast.findIndex(d => d.xpTotal >= threshold);
+      if (dayToHit >= 0) {
+        milestones.push({ day: dayToHit + 1, label: `⭐ Reach ${threshold} XP`, type: 'xp', color: '#f59e0b' });
+      }
+    }
+  });
+
+  const connThresholds = [5, 10, 25];
+  connThresholds.forEach(threshold => {
+    const cur = connections?.length || 0;
+    if (cur < threshold) {
+      const dayToHit = dailyForecast.findIndex(d => d.connTotal >= threshold);
+      if (dayToHit >= 0) {
+        milestones.push({ day: dayToHit + 1, label: `🤝 ${threshold} Connections`, type: 'network', color: '#06b6d4' });
+      }
+    }
+  });
+
+  const profThresholds = [50, 75, 90, 100];
+  profThresholds.forEach(threshold => {
+    if (profileStrength < threshold) {
+      const dayToHit = dailyForecast.findIndex(d => d.profilePct >= threshold);
+      if (dayToHit >= 0) {
+        milestones.push({ day: dayToHit + 1, label: `✨ ${threshold}% Profile`, type: 'profile', color: '#a78bfa' });
+      }
+    }
+  });
+
+  // Keep top 3 earliest milestones
+  milestones.sort((a, b) => a.day - b.day);
+  const topMilestones = milestones.slice(0, 3);
+
+  // ── 7. Trend label & confidence ──────────────────────────────────────────
+  const trendLabel =
+    activityMult >= 1.2  ? 'Accelerating 🚀' :
+    activityMult >= 1.0  ? 'On Track ✅' :
+    daysSinceActive <= 3 ? 'Warming Up 🔥' : 'Slowing Down ⚠️';
+
+  const filledFields = Object.values(profilePoints).filter(v => v > 0).length;
+  const confidenceScore = Math.min(98, Math.round(
+    40 +
+    (filledFields / 9) * 30 +
+    (daysSinceJoined > 3 ? 15 : 0) +
+    (engagementScore > 10 ? 13 : 0)
+  ));
+
+  // ── 8. Narrative ─────────────────────────────────────────────────────────
+  const parts = [`At your current pace, you'll gain ~${totalXpGained} XP`];
+  if (totalConnGained > 0) parts.push(`make ${totalConnGained} new connection${totalConnGained > 1 ? 's' : ''}`);
+  if (finalDay.profilePct > profileStrength) parts.push(`and boost your profile to ${finalDay.profilePct}%`);
+  const narrative = parts.join(', ') + ' in the next 7 days.';
+
+  return {
+    currentMetrics: {
+      xp:             engagementScore,
+      connections:    connections?.length || 0,
+      profileStrength,
+      jobReadiness,
+      badges:         badges?.length || 0,
+    },
+    projections: {
+      xp:             finalDay.xpTotal,
+      connections:    finalDay.connTotal,
+      profileStrength: finalDay.profilePct,
+      jobReadiness:   Math.min(100, Math.round(jobReadiness + totalXpGained * 0.05 + totalConnGained * 2)),
+    },
+    dailyForecast,
+    milestones: topMilestones,
+    narrative,
+    trendLabel,
+    confidenceScore,
+    generatedAt: new Date().toISOString(),
+  };
+};
+
+module.exports = { generateCareerPath, generateIcebreaker, chatbotReply, generateDailyCoach, generateDigitalTwin };

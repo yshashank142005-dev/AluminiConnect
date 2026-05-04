@@ -1,25 +1,79 @@
 import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
 
+const AI_LOADING_STEPS = [
+  'Analysing your skills…',
+  'Mapping career paths…',
+  'Building skill roadmap…',
+  'Finding top projects…',
+  'Finalising your report…',
+];
+
 const SKILLS_LIST = ['JavaScript', 'Python', 'React', 'Node.js', 'SQL', 'Machine Learning', 'Java', 'AWS', 'Docker', 'TypeScript', 'Go', 'Figma', 'Data Analysis'];
 const TIMELINES = ['3 months', '6 months', '1 year', '2 years'];
 
-const ChatMessage = ({ msg }) => (
-  <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
+const ChatMessage = ({ msg, index = 0 }) => (
+  <motion.div
+    style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '12px' }}
+    initial={{ opacity: 0, y: 10, scale: 0.96 }}
+    animate={{ opacity: 1, y: 0, scale: 1 }}
+    transition={{ delay: Math.min(index * 0.03, 0.25), type: 'spring', stiffness: 400, damping: 30 }}
+  >
     {msg.role === 'assistant' && (
-      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg,var(--accent),var(--accent2))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0, marginRight: '10px', alignSelf: 'flex-end' }}>🤖</div>
+      <motion.div
+        style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg,var(--accent),var(--accent2))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0, marginRight: '10px', alignSelf: 'flex-end' }}
+        whileHover={{ rotate: [0, -10, 10, 0], scale: 1.1 }}
+      >🤖</motion.div>
     )}
     <div style={{
       maxWidth: '75%', padding: '12px 16px',
       borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
       background: msg.role === 'user' ? 'linear-gradient(135deg,var(--accent),#5b21b6)' : 'rgba(255,255,255,0.06)',
       border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
+      boxShadow: msg.role === 'user' ? '0 4px 16px rgba(124,58,237,0.2)' : 'none',
       fontSize: '14px', lineHeight: 1.7, whiteSpace: 'pre-wrap',
     }} dangerouslySetInnerHTML={{ __html: msg.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/•/g, '•') }} />
-  </div>
+  </motion.div>
 );
+
+/* Animated AI loading stepper */
+const AILoadingStepper = () => {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setStep(s => Math.min(s + 1, AI_LOADING_STEPS.length - 1)), 900);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div style={{ minHeight: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '24px' }}>
+      <motion.div
+        style={{ fontSize: '56px' }}
+        animate={{ rotate: [0, -8, 8, -4, 4, 0], scale: [1, 1.05, 1] }}
+        transition={{ duration: 1.8, repeat: Infinity }}
+      >🤖</motion.div>
+      <div style={{ fontWeight: 700, fontSize: '18px', textAlign: 'center' }}>Generating your career path…</div>
+      <div style={{ width: '260px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {AI_LOADING_STEPS.map((s, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', opacity: i <= step ? 1 : 0.25, transition: 'opacity 0.4s ease' }}>
+            <motion.span
+              style={{ fontSize: '14px' }}
+              animate={i === step ? { scale: [1, 1.3, 1] } : {}}
+              transition={{ duration: 0.5, repeat: i === step ? Infinity : 0 }}
+            >
+              {i < step ? '✅' : i === step ? '⚙️' : '○'}
+            </motion.span>
+            <span style={{ fontSize: '13px', color: i <= step ? 'var(--text-primary)' : 'var(--text-muted)' }}>{s}</span>
+          </div>
+        ))}
+      </div>
+      <div className="progress-bar" style={{ width: '260px' }}>
+        <motion.div className="progress-fill" animate={{ width: `${((step + 1) / AI_LOADING_STEPS.length) * 100}%` }} transition={{ duration: 0.5 }} />
+      </div>
+    </div>
+  );
+};
 
 const CareerPathResults = ({ data }) => {
   const [activeTab, setActiveTab] = useState('paths');
@@ -50,12 +104,24 @@ const CareerPathResults = ({ data }) => {
       {activeTab === 'paths' && (
         <div className="grid-2">
           {data.careerPaths?.map((p, i) => (
-            <div key={i} className="card card-p" style={{ borderLeft: '3px solid var(--accent)' }}>
+            <motion.div
+              key={i}
+              className="card card-p"
+              style={{ borderLeft: '3px solid var(--accent)', position: 'relative', overflow: 'hidden' }}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.08, type: 'spring', stiffness: 340, damping: 28 }}
+              whileHover={{ y: -3 }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                 <div style={{ fontWeight: 700, fontSize: '15px' }}>{p.title}</div>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: p.match >= 85 ? 'var(--success)' : p.match >= 70 ? 'var(--warning)' : 'var(--text-secondary)', padding: '4px 10px', borderRadius: '100px', background: `${p.match >= 85 ? 'rgba(16,185,129' : p.match >= 70 ? 'rgba(245,158,11' : 'rgba(100,100,100'},0.15)` }}>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: p.match >= 85 ? 'var(--success)' : p.match >= 70 ? 'var(--warning)' : 'var(--text-secondary)', padding: '4px 10px', borderRadius: '100px', background: `${p.match >= 85 ? 'rgba(16,185,129' : p.match >= 70 ? 'rgba(245,158,11' : 'rgba(100,100,100'},0.15)` }}>
                   {p.match}% match
-                </div>
+                </span>
+              </div>
+              <div className="progress-bar" style={{ marginBottom: '12px' }}>
+                <motion.div className="progress-fill" initial={{ width: 0 }} animate={{ width: `${p.match}%` }} transition={{ duration: 0.9, delay: i * 0.08 + 0.2 }}
+                  style={{ background: p.match >= 85 ? 'linear-gradient(90deg,var(--success),#34d399)' : undefined }} />
               </div>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '10px', lineHeight: 1.5 }}>{p.description}</p>
               <div style={{ fontSize: '13px', color: 'var(--success)', fontWeight: 600, marginBottom: '4px' }}>💰 {p.avgSalary}</div>
@@ -65,7 +131,7 @@ const CareerPathResults = ({ data }) => {
                   {p.topCompanies.map(c => <span key={c} className="tag tag-cyan" style={{ fontSize: '11px' }}>{c}</span>)}
                 </div>
               )}
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
@@ -189,11 +255,11 @@ export default function CareerAIPage() {
         <p style={{ color: 'var(--text-secondary)' }}>AI-powered career guidance — personalized roadmaps, skill plans, and instant advice.</p>
       </div>
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '28px' }}>
+      <motion.div style={{ display: 'flex', gap: '8px', marginBottom: '28px' }} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         {[{ id: 'generator', label: '🎯 Career Path Generator' }, { id: 'chat', label: '💬 CareerBot Chat' }].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} className="btn" style={{ background: tab === t.id ? 'rgba(124,58,237,0.2)' : 'var(--bg-card)', color: tab === t.id ? 'var(--accent-light)' : 'var(--text-secondary)', border: `1px solid ${tab === t.id ? 'var(--accent)' : 'var(--border)'}` }}>{t.label}</button>
+          <motion.button key={t.id} onClick={() => setTab(t.id)} className="btn" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} style={{ background: tab === t.id ? 'rgba(124,58,237,0.2)' : 'var(--bg-card)', color: tab === t.id ? 'var(--accent-light)' : 'var(--text-secondary)', border: `1px solid ${tab === t.id ? 'var(--accent)' : 'var(--border)'}` }}>{t.label}</motion.button>
         ))}
-      </div>
+      </motion.div>
 
       {tab === 'generator' && (
         <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '24px', alignItems: 'start' }}>
@@ -232,26 +298,31 @@ export default function CareerAIPage() {
                   ))}
                 </div>
               </div>
-              <button onClick={handleGenerate} disabled={loading} className="btn btn-primary btn-full">
-                {loading ? <><span className="spinner spinner-sm" /> Generating with AI...</> : '✨ Generate My Career Path'}
-              </button>
+              <motion.button onClick={handleGenerate} disabled={loading} className="btn btn-primary btn-full" whileHover={{ scale: 1.03, y: -2 }} whileTap={{ scale: 0.97 }}>
+                {loading ? <><span className="spinner spinner-sm" /> Generating…</> : '✨ Generate My Career Path'}
+              </motion.button>
             </div>
           </div>
 
           <div>
-            {!careerData && !loading ? (
-              <div className="empty-state card card-p" style={{ minHeight: '400px' }}>
-                <div className="empty-icon">🤖</div>
-                <h3>Your AI Career Report</h3>
-                <p>Select your skills and click Generate to get a personalized career roadmap, skill plan, project ideas, and more.</p>
-              </div>
-            ) : loading ? (
-              <div className="card card-p" style={{ minHeight: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-                <div className="spinner" style={{ width: '56px', height: '56px', borderWidth: '4px' }} />
-                <div style={{ fontWeight: 700, fontSize: '18px' }}>Generating your career path...</div>
-                <p style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>AI is analyzing your profile and creating a personalized roadmap.</p>
-              </div>
-            ) : <CareerPathResults data={careerData} />}
+            <AnimatePresence mode="wait">
+              {!careerData && !loading ? (
+                <motion.div key="empty" className="empty-state card card-p" style={{ minHeight: '400px' }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <motion.span style={{ fontSize: '64px', marginBottom: '12px', display: 'block' }} animate={{ y: [0, -14, 0] }} transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}>🤖</motion.span>
+                  <h3>Your AI Career Report</h3>
+                  <p style={{ maxWidth: '340px', marginTop: '8px', fontSize: '14px', lineHeight: 1.7 }}>Pick your skills, set a goal, and let the AI craft a personalized roadmap — career paths, skill gaps, projects & more.</p>
+                  <motion.div style={{ marginTop: '16px', fontSize: '12px', color: 'var(--accent-light)', fontWeight: 600 }} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }}>← Start by selecting skills</motion.div>
+                </motion.div>
+              ) : loading ? (
+                <motion.div key="loading" className="card card-p" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <AILoadingStepper />
+                </motion.div>
+              ) : (
+                <motion.div key="results" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                  <CareerPathResults data={careerData} />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       )}
@@ -259,18 +330,22 @@ export default function CareerAIPage() {
       {tab === 'chat' && (
         <div className="card" style={{ height: '600px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-            {messages.map((m, i) => <ChatMessage key={i} msg={m} />)}
-            {chatLoading && (
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', color: 'var(--text-muted)', fontSize: '13px', marginBottom: '12px' }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg,var(--accent),var(--accent2))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>🤖</div>
-                <div className="animate-pulse">CareerBot is thinking...</div>
-              </div>
-            )}
+            {messages.map((m, i) => <ChatMessage key={i} msg={m} index={i} />)}
+            <AnimatePresence>
+              {chatLoading && (
+                <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} style={{ display: 'flex', gap: '10px', alignItems: 'center', color: 'var(--text-muted)', fontSize: '13px', marginBottom: '12px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg,var(--accent),var(--accent2))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>🤖</div>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {[0,1,2].map(i => <motion.span key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-light)', display: 'block' }} animate={{ y: [0,-5,0] }} transition={{ duration: 0.5, repeat: Infinity, delay: i*0.15 }} />)}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div ref={bottomRef} />
           </div>
           <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '12px' }}>
-            <input className="input" placeholder="Ask about career paths, interviews, salary, skills..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleChat()} style={{ flex: 1 }} />
-            <button onClick={handleChat} disabled={!chatInput.trim() || chatLoading} className="btn btn-primary">Send ➤</button>
+            <input className="input" placeholder="Ask about career paths, interviews, salary, skills…" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleChat()} style={{ flex: 1 }} />
+            <motion.button onClick={handleChat} disabled={!chatInput.trim() || chatLoading} className="btn btn-primary" whileHover={{ scale: 1.06, y: -1 }} whileTap={{ scale: 0.94 }}>Send ➤</motion.button>
           </div>
           <div style={{ padding: '10px 24px 16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {['How to prepare for FAANG interviews?', 'Best skills to learn in 2025?', 'How to negotiate salary?'].map(q => (

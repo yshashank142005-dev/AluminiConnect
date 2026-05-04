@@ -1,8 +1,11 @@
 /**
- * AI Controller — Career path, chatbot, icebreakers
+ * AI Controller — Career path, chatbot, icebreakers, daily coach, digital twin
  */
 const User = require('../models/User');
 const aiService = require('../services/aiService');
+
+// In-memory daily coach cache (resets on server restart, refreshes daily)
+const dailyCoachCache = new Map();
 
 // @desc    Generate personalized career path
 // @route   POST /api/ai/career-path
@@ -76,6 +79,79 @@ exports.generateIcebreaker = async (req, res, next) => {
     const icebreaker = await aiService.generateIcebreaker(user1, user2);
 
     res.json({ success: true, icebreaker });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get daily personalized coaching action
+// @route   GET /api/ai/daily-coach
+// @access  Private
+exports.getDailyCoach = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    const today = new Date().toISOString().slice(0, 10);
+    const cacheKey = `${req.user.id}:${today}`;
+
+    // Return cached tip if already generated today
+    if (dailyCoachCache.has(cacheKey)) {
+      return res.json({ success: true, data: dailyCoachCache.get(cacheKey), cached: true });
+    }
+
+    const tip = await aiService.generateDailyCoach({
+      name: user.name,
+      role: user.role,
+      skills: user.skills,
+      careerInterests: user.careerInterests,
+      goals: user.goals,
+      engagementScore: user.engagementScore,
+      connections: user.connections,
+      badges: user.badges,
+      department: user.department,
+    });
+
+    // Cache for this user today
+    dailyCoachCache.set(cacheKey, tip);
+
+    // Clean up old cache entries (keep memory lean)
+    for (const [key] of dailyCoachCache) {
+      if (!key.endsWith(today)) dailyCoachCache.delete(key);
+    }
+
+    // Award a small XP nudge for checking coach daily
+    await user.addEngagement(1);
+
+    res.json({ success: true, data: tip, cached: false });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get 7-day digital twin projection
+// @route   GET /api/ai/digital-twin
+// @access  Private
+exports.getDigitalTwin = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    const twin = aiService.generateDigitalTwin({
+      name:            user.name,
+      role:            user.role,
+      engagementScore: user.engagementScore,
+      connections:     user.connections,
+      badges:          user.badges,
+      skills:          user.skills,
+      careerInterests: user.careerInterests,
+      goals:           user.goals,
+      bio:             user.bio,
+      profilePhoto:    user.profilePhoto,
+      department:      user.department,
+      graduationYear:  user.graduationYear,
+      createdAt:       user.createdAt,
+      lastSeen:        user.lastSeen,
+    });
+
+    res.json({ success: true, data: twin });
   } catch (error) {
     next(error);
   }
