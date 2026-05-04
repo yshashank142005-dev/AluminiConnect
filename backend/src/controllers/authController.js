@@ -76,17 +76,20 @@ exports.sendOtp = async (req, res, next) => {
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing) return res.status(400).json({ success: false, message: 'Email already registered' });
 
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-      return res.status(503).json({ success: false, message: 'Email service not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to .env' });
+    const result = await emailService.sendOtp(email);
+    if (result.delivered) {
+      return res.json({ success: true, message: `OTP sent to ${email}` });
     }
 
-    await emailService.sendOtp(email);
-    res.json({ success: true, message: `OTP sent to ${email}` });
+    return res.json({
+      success: true,
+      message: `OTP generated successfully. Check the backend logs for the verification code.`,
+    });
   } catch (error) {
     if (error.code === 'EAUTH' || error.responseCode === 535) {
       return res.status(503).json({ success: false, message: 'Gmail authentication failed. Check GMAIL_USER and GMAIL_APP_PASSWORD in .env' });
     }
-    next(error);
+    return res.status(503).json({ success: false, message: error.message || 'Failed to send OTP. Check email configuration.' });
   }
 };
 

@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
+import { SITE_IMAGES } from '../constants/siteImages';
 
 const DEPARTMENTS = [
   'Computer Science', 'Information Technology', 'Data Science',
@@ -148,8 +150,23 @@ export default function RegisterPage() {
   const progress = step === 1 ? 33 : step === 'otp' ? 66 : 100;
 
   return (
-    <div className="auth-page" style={{ alignItems: 'flex-start', paddingTop: '40px' }}>
-      <div className="card auth-card" style={{ maxWidth: '520px' }}>
+    <div className="auth-page" style={{ alignItems: 'center', paddingTop: '32px', paddingBottom: '32px' }}>
+      <motion.div
+        className="auth-split"
+        style={{ maxWidth: '1000px', alignSelf: 'stretch' }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div className="auth-visual">
+          <img src={SITE_IMAGES.authGraduation} alt="" loading="eager" decoding="async" />
+          <div className="auth-visual-overlay">
+            <p className="auth-visual-quote">Join thousands building careers through real connections.</p>
+            <span className="auth-visual-meta">Verify your email · Build your profile · Start matching</span>
+          </div>
+        </div>
+        <div className="auth-panel" style={{ alignItems: 'flex-start', overflowY: 'auto', maxHeight: 'calc(100vh - 64px)' }}>
+      <div className="card auth-card" style={{ maxWidth: '520px', width: '100%', margin: 0 }}>
         <div className="auth-logo gradient-text">🎓 AlumniConnect AI</div>
         <p className="auth-subtitle">Create your account and start your journey.</p>
 
@@ -182,8 +199,16 @@ export default function RegisterPage() {
         </div>
 
         {/* ── STEP 1: Basic Info ── */}
+        <AnimatePresence mode="wait">
         {step === 1 && (
-          <div className="flex-col gap-16 animate-fade">
+          <motion.div
+            key="step1"
+            className="flex-col gap-16"
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 12 }}
+            transition={{ duration: 0.25 }}
+          >
             <div className="form-group">
               <label className="label">Full Name *</label>
               <input className="input" placeholder="Your full name" value={form.name} onChange={e => update('name', e.target.value)} />
@@ -242,12 +267,19 @@ export default function RegisterPage() {
                 ? <><span className="spinner spinner-sm" /> Sending Code...</>
                 : '📧 Send Verification Code →'}
             </button>
-          </div>
+          </motion.div>
         )}
 
         {/* ── STEP OTP: Email Verification ── */}
         {step === 'otp' && (
-          <div className="flex-col gap-16 animate-fade">
+          <motion.div
+            key="otp"
+            className="flex-col gap-16"
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 12 }}
+            transition={{ duration: 0.25 }}
+          >
             {/* Icon */}
             <div style={{ textAlign: 'center', padding: '8px 0' }}>
               <div style={{
@@ -328,13 +360,20 @@ export default function RegisterPage() {
                 {otpLoading ? 'Sending...' : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
               </button>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* ── STEP 2: Profile Details ── */}
         {step === 2 && (
-          <form onSubmit={handleSubmit}>
-            <div className="flex-col gap-16 animate-fade">
+          <motion.form
+            key="step2"
+            onSubmit={handleSubmit}
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 12 }}
+            transition={{ duration: 0.25 }}
+          >
+            <div className="flex-col gap-16">
               <div className="form-group">
                 <label className="label">Skills (click to select)</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
@@ -386,13 +425,16 @@ export default function RegisterPage() {
                 </button>
               </div>
             </div>
-          </form>
+          </motion.form>
         )}
+        </AnimatePresence>
 
         <div className="auth-footer">
           Already have an account? <Link to="/login">Sign in →</Link>
         </div>
       </div>
+        </div>
+      </motion.div>
     </div>
   );
 }

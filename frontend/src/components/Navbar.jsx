@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useLocation, Link } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import api from '../api/axios';
@@ -60,20 +61,31 @@ export default function Navbar() {
       zIndex: 99,
     }}>
       <div>
-        <h1 style={{ fontSize: '18px', fontWeight: 700 }}>{title}</h1>
+        <motion.h1
+          key={title}
+          style={{ fontSize: '18px', fontWeight: 700 }}
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.25 }}
+        >
+          {title}
+        </motion.h1>
         <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          Welcome back, {user?.name?.split(' ')[0]} 👋
+          Welcome back, {user?.name?.split(' ')[0]}
         </p>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         {/* Notification Bell */}
         <div style={{ position: 'relative' }}>
-          <button
+          <motion.button
             id="notif-bell"
+            type="button"
             onClick={() => setShowNotifs(v => !v)}
             className="btn btn-ghost btn-icon"
             style={{ fontSize: '20px', position: 'relative' }}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.94 }}
           >
             🔔
             {unread > 0 && (
@@ -82,10 +94,17 @@ export default function Navbar() {
                 minWidth: '16px', height: '16px', fontSize: '9px',
               }}>{unread > 9 ? '9+' : unread}</span>
             )}
-          </button>
+          </motion.button>
 
-          {showNotifs && (
-            <div style={{
+          <AnimatePresence>
+            {showNotifs && (
+            <motion.div
+              key="notif-panel"
+              initial={{ opacity: 0, y: -8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+              style={{
               position: 'absolute', top: 'calc(100% + 8px)', right: 0,
               width: '340px',
               background: 'var(--bg-secondary)',
@@ -93,7 +112,6 @@ export default function Navbar() {
               borderRadius: 'var(--radius-lg)',
               boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
               zIndex: 200, overflow: 'hidden',
-              animation: 'fadeIn 0.2s ease',
             }}>
               <div style={{ padding: '16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 700 }}>Notifications</span>
@@ -124,18 +142,22 @@ export default function Navbar() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Engagement Score */}
-        <div style={{
+        <motion.div
+          style={{
           padding: '6px 14px', borderRadius: '100px',
           background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.25)',
           fontSize: '13px', fontWeight: 600, color: 'var(--accent-light)',
-        }}>
+        }}
+          whileHover={{ scale: 1.03 }}
+        >
           ⭐ {user?.engagementScore || 0} pts
-        </div>
+        </motion.div>
       </div>
 
       {/* Click outside to close */}

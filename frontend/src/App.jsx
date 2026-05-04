@@ -13,16 +13,29 @@ import JobsPage from './pages/JobsPage';
 import EventsPage from './pages/EventsPage';
 import CareerAIPage from './pages/CareerAIPage';
 import ProfilePage from './pages/ProfilePage';
+import { motion } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return (
-    <div className="loading-screen">
+    <motion.div
+      className="loading-screen"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
+    >
       <div className="spinner" />
-      <span>Loading AlumniConnect...</span>
-    </div>
+      <motion.span
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+      >
+        Loading AlumniConnect...
+      </motion.span>
+    </motion.div>
   );
   return user ? children : <Navigate to="/login" replace />;
 };

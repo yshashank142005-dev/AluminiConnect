@@ -32,12 +32,25 @@ const app = express();
 // Normalise CLIENT_URL — strip trailing slash to avoid invalid CORS header
 const rawOrigin = (process.env.CLIENT_URL || 'http://localhost:5173').trim().replace(/\/+$/, '');
 const allowedOrigins = [rawOrigin];
+const isDevLocalhostOrigin = (origin) => {
+  if (!origin) return false;
+  const normalized = origin.trim().replace(/\/+$/, '');
+  return /^(http:\/\/localhost:\d+|http:\/\/127\.0\.0\.1:\d+)$/.test(normalized);
+};
+const corsOriginCallback = (origin, callback) => {
+  if (!origin) return callback(null, true);
+  const normalized = origin.trim().replace(/\/+$/, '');
+  if (allowedOrigins.includes(normalized) || (process.env.NODE_ENV === 'development' && isDevLocalhostOrigin(normalized))) {
+    return callback(null, true);
+  }
+  callback(new Error(`CORS blocked: ${origin}`));
+};
 const server = http.createServer(app);
 
 // Socket.IO setup
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: corsOriginCallback,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -49,14 +62,7 @@ app.set('io', io);
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (curl, Postman, mobile apps)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin.replace(/\/+$/, ''))) {
-      return callback(null, true);
-    }
-    callback(new Error(`CORS blocked: ${origin}`));
-  },
+  origin: corsOriginCallback,
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
