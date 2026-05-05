@@ -3,6 +3,7 @@
  */
 const User = require('../models/User');
 const aiService = require('../services/aiService');
+const { getTopMatches } = require('../utils/matchingAlgorithm');
 
 // In-memory daily coach cache (resets on server restart, refreshes daily)
 const dailyCoachCache = new Map();
@@ -152,6 +153,62 @@ exports.getDigitalTwin = async (req, res, next) => {
     });
 
     res.json({ success: true, data: twin });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Generate Career GPS snapshot
+// @route   POST /api/ai/career-gps
+// @access  Private
+exports.getCareerGps = async (req, res, next) => {
+  try {
+    const { targetRole = '' } = req.body;
+    const user = await User.findById(req.user.id).populate('connections', 'name role company currentRole');
+
+    const allAlumni = await User.find({
+      role: 'alumni',
+      isActive: true,
+      isAvailableForMentorship: true,
+    }).select('name profilePhoto currentRole company industry skills yearsOfExperience isVerified isAvailableForMentorship');
+
+    const topMatches = getTopMatches(user, allAlumni, 3);
+    const mentors = topMatches.map((m) => ({
+      id: m.alumni._id,
+      name: m.alumni.name,
+      profilePhoto: m.alumni.profilePhoto,
+      currentRole: m.alumni.currentRole,
+      company: m.alumni.company,
+      industry: m.alumni.industry,
+      yearsOfExperience: m.alumni.yearsOfExperience,
+      match: m.score,
+      reason: `Strong fit via ${m.breakdown.skills}% skill overlap and ${m.breakdown.industry}% industry alignment.`,
+      commonSkills: m.commonSkills || [],
+    }));
+
+    const gps = await aiService.generateCareerGps({
+      targetRole,
+      name: user.name,
+      role: user.role,
+      skills: user.skills,
+      interests: user.careerInterests,
+      goals: user.goals,
+      profile: {
+        bio: user.bio,
+        department: user.department,
+        graduationYear: user.graduationYear,
+        linkedIn: user.linkedIn,
+        github: user.github,
+        website: user.website,
+        profilePhoto: user.profilePhoto,
+      },
+      engagementScore: user.engagementScore,
+      connectionsCount: user.connections?.length || 0,
+      mentors,
+    });
+
+    await user.addEngagement(3);
+    res.json({ success: true, data: gps });
   } catch (error) {
     next(error);
   }

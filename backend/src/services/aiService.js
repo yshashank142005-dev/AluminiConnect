@@ -576,4 +576,111 @@ const generateDigitalTwin = (userProfile = {}) => {
   };
 };
 
-module.exports = { generateCareerPath, generateIcebreaker, chatbotReply, generateDailyCoach, generateDigitalTwin };
+// ─── Career GPS — Readiness + 7-Day Sprint ───────────────────────────────────
+const generateCareerGps = async (profile = {}) => {
+  const {
+    targetRole = '',
+    skills = [],
+    interests = [],
+    goals = '',
+    profile: userProfile = {},
+    connectionsCount = 0,
+    engagementScore = 0,
+    mentors = [],
+  } = profile;
+
+  const resolvedTargetRole = (targetRole || goals || interests[0] || 'Software Engineer').toString().trim();
+  const profileSignals = [
+    userProfile.bio,
+    userProfile.department,
+    userProfile.graduationYear,
+    userProfile.linkedIn,
+    userProfile.github,
+    userProfile.website,
+    userProfile.profilePhoto,
+  ].filter(Boolean).length;
+  const skillsScore = Math.min(40, skills.length * 5);
+  const profileScore = Math.min(25, profileSignals * 4);
+  const networkScore = Math.min(20, connectionsCount * 4);
+  const momentumScore = Math.min(15, Math.round(engagementScore / 5));
+  const readinessScore = Math.min(100, skillsScore + profileScore + networkScore + momentumScore);
+
+  const buckets = [
+    { name: 'Skills', score: skillsScore, max: 40 },
+    { name: 'Profile', score: profileScore, max: 25 },
+    { name: 'Network', score: networkScore, max: 20 },
+    { name: 'Momentum', score: momentumScore, max: 15 },
+  ];
+  const weakest = buckets.sort((a, b) => a.score / a.max - b.score / b.max)[0];
+
+  const mockSprint = [
+    { day: 1, task: `Update profile headline for ${resolvedTargetRole}`, outcome: 'Stronger first impression for mentors/recruiters' },
+    { day: 2, task: `Add one project proving ${skills[0] || 'core technical'} skills`, outcome: 'Better credibility during referrals' },
+    { day: 3, task: `Reach out to one alumni mentor with a focused ask`, outcome: 'Actionable feedback from someone in industry' },
+    { day: 4, task: 'Practice 2 interview questions and note weak areas', outcome: 'Clear skill gaps to improve this week' },
+    { day: 5, task: `Apply to 2 roles aligned with ${resolvedTargetRole}`, outcome: 'Pipeline momentum and market feedback' },
+    { day: 6, task: 'Refine resume bullets with measurable impact', outcome: 'Higher shortlist probability' },
+    { day: 7, task: 'Review week, track wins, and plan next sprint', outcome: 'Consistency and measurable progress' },
+  ];
+
+  if (openai) {
+    try {
+      const prompt = `Create a Career GPS snapshot for a student.
+
+Return ONLY valid JSON:
+{
+  "targetRole": "string",
+  "readinessScore": number,
+  "readinessBand": "early | building | strong",
+  "focusArea": "string",
+  "summary": "one sentence",
+  "sprint": [{"day":1,"task":"string","outcome":"string"}]
+}
+
+Profile:
+- Target Role: ${resolvedTargetRole}
+- Skills: ${skills.join(', ') || 'none'}
+- Interests: ${interests.join(', ') || 'none'}
+- Goals: ${goals || 'none'}
+- Connections: ${connectionsCount}
+- Engagement Score: ${engagementScore}
+- Internal readiness baseline: ${readinessScore}
+- Weakest area: ${weakest.name}
+
+Rules:
+- Keep sprint to exactly 7 items (day 1..7)
+- Tasks must be specific and practical
+- Keep each task under 14 words
+- Keep each outcome under 14 words`;
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.6,
+        max_tokens: 700,
+        response_format: { type: 'json_object' },
+      });
+      const parsed = JSON.parse(completion.choices[0].message.content);
+      return {
+        ...parsed,
+        mentors,
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error('OpenAI Career GPS error:', error.message);
+    }
+  }
+
+  return {
+    targetRole: resolvedTargetRole,
+    readinessScore,
+    readinessBand: readinessScore >= 75 ? 'strong' : readinessScore >= 45 ? 'building' : 'early',
+    focusArea: weakest.name,
+    summary: `You are ${readinessScore}% ready for ${resolvedTargetRole}. Improve ${weakest.name.toLowerCase()} next for the fastest gain.`,
+    sprint: mockSprint,
+    mentors,
+    generatedAt: new Date().toISOString(),
+  };
+};
+
+module.exports = { generateCareerPath, generateIcebreaker, chatbotReply, generateDailyCoach, generateDigitalTwin, generateCareerGps };

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
@@ -207,6 +208,7 @@ const CareerPathResults = ({ data }) => {
 
 export default function CareerAIPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [tab, setTab] = useState('generator');
   const [skills, setSkills] = useState(user?.skills || []);
   const [interests, setInterests] = useState(user?.careerInterests || []);
@@ -217,6 +219,9 @@ export default function CareerAIPage() {
   const [messages, setMessages] = useState([{ role: 'assistant', content: '👋 Hi! I\'m CareerBot, your AI career advisor. Ask me anything about:\n• **Career planning** & skill roadmaps\n• **Interview prep** & resume tips\n• **Salary negotiation** strategies\n• **Networking** with alumni mentors\n\nWhat would you like to explore?' }]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [gpsTargetRole, setGpsTargetRole] = useState(user?.goals || user?.careerInterests?.[0] || '');
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsData, setGpsData] = useState(null);
   const bottomRef = useRef(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -248,6 +253,19 @@ export default function CareerAIPage() {
     finally { setChatLoading(false); }
   };
 
+  const handleGenerateGps = async () => {
+    setGpsLoading(true);
+    try {
+      const res = await api.post('/ai/career-gps', { targetRole: gpsTargetRole });
+      setGpsData(res.data.data);
+      toast.success('Career GPS updated!');
+    } catch {
+      toast.error('Failed to load Career GPS');
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
   return (
     <div className="page-wide animate-fade" style={{ padding: '32px' }}>
       <div className="page-hero" style={{ marginBottom: '28px' }}>
@@ -256,7 +274,7 @@ export default function CareerAIPage() {
       </div>
 
       <motion.div style={{ display: 'flex', gap: '8px', marginBottom: '28px' }} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-        {[{ id: 'generator', label: '🎯 Career Path Generator' }, { id: 'chat', label: '💬 CareerBot Chat' }].map(t => (
+        {[{ id: 'generator', label: '🎯 Career Path Generator' }, { id: 'gps', label: '🧭 Career GPS' }, { id: 'chat', label: '💬 CareerBot Chat' }].map(t => (
           <motion.button key={t.id} onClick={() => setTab(t.id)} className="btn" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} style={{ background: tab === t.id ? 'rgba(124,58,237,0.2)' : 'var(--bg-card)', color: tab === t.id ? 'var(--accent-light)' : 'var(--text-secondary)', border: `1px solid ${tab === t.id ? 'var(--accent)' : 'var(--border)'}` }}>{t.label}</motion.button>
         ))}
       </motion.div>
@@ -324,6 +342,114 @@ export default function CareerAIPage() {
               )}
             </AnimatePresence>
           </div>
+        </div>
+      )}
+
+      {tab === 'gps' && (
+        <div className="flex-col gap-16">
+          <div className="card card-p" style={{ display: 'grid', gap: '14px', gridTemplateColumns: '1fr auto', alignItems: 'end' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="label">Target Role</label>
+              <input
+                className="input"
+                placeholder="e.g. Data Analyst at Deloitte"
+                value={gpsTargetRole}
+                onChange={(e) => setGpsTargetRole(e.target.value)}
+              />
+            </div>
+            <button className="btn btn-primary" onClick={handleGenerateGps} disabled={gpsLoading}>
+              {gpsLoading ? <><span className="spinner spinner-sm" /> Analysing...</> : 'Generate Career GPS'}
+            </button>
+          </div>
+
+          {!gpsData && !gpsLoading && (
+            <div className="empty-state card card-p">
+              <span style={{ fontSize: '54px' }}>🧭</span>
+              <h3 style={{ marginTop: '8px' }}>Career GPS</h3>
+              <p style={{ marginTop: '8px', maxWidth: '520px' }}>
+                Get your readiness score, a focused 7-day action sprint, and the best mentors to contact now.
+              </p>
+            </div>
+          )}
+
+          {gpsLoading && (
+            <div className="card card-p">
+              <AILoadingStepper />
+            </div>
+          )}
+
+          {gpsData && !gpsLoading && (
+            <div className="flex-col gap-16">
+              <div className="grid-2">
+                <div className="card card-p" style={{ borderLeft: '3px solid var(--accent)' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Target Role</div>
+                  <div style={{ marginTop: '6px', fontWeight: 700, fontSize: '20px' }}>{gpsData.targetRole}</div>
+                  <div style={{ marginTop: '12px', color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.6 }}>{gpsData.summary}</div>
+                </div>
+                <div className="card card-p">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Readiness Score</div>
+                    <div className="tag tag-cyan">{gpsData.readinessBand}</div>
+                  </div>
+                  <div style={{ marginTop: '8px', fontWeight: 800, fontSize: '30px', color: 'var(--accent-light)' }}>{gpsData.readinessScore}%</div>
+                  <div className="progress-bar" style={{ marginTop: '10px' }}>
+                    <div className="progress-fill" style={{ width: `${gpsData.readinessScore}%` }} />
+                  </div>
+                  <div style={{ marginTop: '10px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    Focus next: <strong>{gpsData.focusArea}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card card-p">
+                <h3 style={{ marginBottom: '14px' }}>📅 7-Day Action Sprint</h3>
+                <div className="flex-col gap-12">
+                  {(gpsData.sprint || []).map((item) => (
+                    <div key={item.day} style={{ display: 'grid', gridTemplateColumns: '74px 1fr', gap: '12px', alignItems: 'start' }}>
+                      <div className="tag" style={{ justifyContent: 'center' }}>Day {item.day}</div>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{item.task}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{item.outcome}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card card-p">
+                <h3 style={{ marginBottom: '14px' }}>🤝 Best Mentors To Contact Now</h3>
+                <div className="grid-2">
+                  {(gpsData.mentors || []).map((mentor) => (
+                    <div key={mentor.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{mentor.name}</div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
+                            {mentor.currentRole || 'Alumni Mentor'} {mentor.company ? `@ ${mentor.company}` : ''}
+                          </div>
+                        </div>
+                        <div className="tag tag-cyan">{mentor.match}% match</div>
+                      </div>
+                      <p style={{ marginTop: '10px', fontSize: '13px', color: 'var(--text-secondary)' }}>{mentor.reason}</p>
+                      {!!mentor.commonSkills?.length && (
+                        <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {mentor.commonSkills.map((s) => <span key={s} className="tag" style={{ fontSize: '11px' }}>{s}</span>)}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ marginTop: '12px' }}
+                        onClick={() => navigate(`/messages/${mentor.id}`)}
+                      >
+                        💬 Message Mentor
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

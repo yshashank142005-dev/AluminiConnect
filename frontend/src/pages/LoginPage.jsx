@@ -35,7 +35,13 @@ export default function LoginPage() {
       toast.success('Welcome back! 🎉');
       navigate('/dashboard');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Login failed');
+      const msg = err.response?.data?.message;
+      toast.error(
+        msg ||
+          (err.code === 'ERR_NETWORK' || err.message === 'Network Error'
+            ? 'Cannot reach server. Is the backend running on port 5000?'
+            : 'Login failed. If this is first run, seed demo users from backend: npm run seed')
+      );
     } finally {
       setLoading(false);
     }

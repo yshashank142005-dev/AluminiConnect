@@ -9,6 +9,7 @@ const {
   generateIcebreaker,
   getDailyCoach,
   getDigitalTwin,
+  getCareerGps,
 } = require('../controllers/aiController');
 const { protect } = require('../middleware/auth');
 
@@ -17,6 +18,7 @@ router.post('/chat', protect, chatbot);
 router.post('/icebreaker', protect, generateIcebreaker);
 router.get('/daily-coach', protect, getDailyCoach);
 router.get('/digital-twin', protect, getDigitalTwin);
+router.post('/career-gps', protect, getCareerGps);
 
 module.exports = router;
 

@@ -5,6 +5,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const mongoose = require('mongoose');
+const dns = require('dns');
 const User = require('../models/User');
 const Job = require('../models/Job');
 const Event = require('../models/Event');
@@ -33,6 +34,9 @@ const adminData = {
 
 async function seedDB() {
   try {
+    if (MONGO_URI.includes('mongodb+srv')) {
+      dns.setServers(['8.8.8.8', '1.1.1.1']);
+    }
     await mongoose.connect(MONGO_URI);
     console.log('✅ MongoDB connected');
 
