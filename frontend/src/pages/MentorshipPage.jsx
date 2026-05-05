@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
@@ -226,22 +226,30 @@ export default function MentorshipPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     setLoading(true);
     try {
       const params = filter !== 'all' ? `?status=${filter}` : '';
+      console.log(`📡 Fetching mentorship requests with params:`, params);
       const res = await api.get(`/mentorship/requests${params}`);
+      console.log(`✅ Response received:`, res.data.requests);
       setRequests(res.data.requests);
+    } catch (err) {
+      console.error(`❌ Error fetching requests:`, err.message, err.response?.data);
     } finally { setLoading(false); }
-  };
+  }, [filter]);
 
-  useEffect(() => { fetchRequests(); }, [filter]);
+  useEffect(() => { 
+    console.log(`🔄 Filter changed to: ${filter}`);
+    fetchRequests(); 
+  }, [filter, fetchRequests]);
 
   const handleRespond = async (id, status) => {
     try {
       await api.put(`/mentorship/request/${id}/respond`, { status });
       toast.success(status === 'accepted' ? '🎉 Request accepted!' : 'Request declined');
       fetchRequests();
+      fetchAllRequests();
     } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
   };
 
@@ -250,6 +258,7 @@ export default function MentorshipPage() {
       await api.put(`/mentorship/request/${id}/schedule`, { scheduledDate: date, scheduledTime: time, meetingLink: link });
       toast.success('Session scheduled! 📅');
       fetchRequests();
+      fetchAllRequests();
     } catch { toast.error('Failed to schedule'); }
   };
 
@@ -258,6 +267,7 @@ export default function MentorshipPage() {
       await api.post(`/mentorship/request/${id}/feedback`, { rating, comment });
       toast.success('Feedback submitted! ⭐');
       fetchRequests();
+      fetchAllRequests();
     } catch { toast.error('Failed to submit feedback'); }
   };
 
@@ -266,6 +276,7 @@ export default function MentorshipPage() {
       await api.put(`/mentorship/request/${id}/cancel`);
       toast.success('Request cancelled');
       fetchRequests();
+      fetchAllRequests();
     } catch { toast.error('Failed to cancel'); }
   };
 
@@ -273,9 +284,14 @@ export default function MentorshipPage() {
 
   // Counts per status for badges (use full list regardless of filter)
   const [allRequests, setAllRequests] = useState([]);
-  useEffect(() => {
+  
+  const fetchAllRequests = useCallback(() => {
     api.get('/mentorship/requests').then(r => setAllRequests(r.data.requests || [])).catch(() => {});
   }, []);
+  
+  useEffect(() => {
+    fetchAllRequests();
+  }, [fetchAllRequests]);
 
   const countFor = (s) => s === 'all' ? allRequests.length : allRequests.filter(r => r.status === s).length;
 
@@ -357,7 +373,9 @@ export default function MentorshipPage() {
           {[...Array(4)].map((_, i) => <SkeletonMentorCard key={i} />)}
         </div>
       ) : requests.length === 0 ? (
-        <motion.div
+        <>
+          {console.log(`📭 No requests to display. Filter: ${filter}, Requests length: ${requests.length}`)}
+          <motion.div
           className="empty-state card card-p"
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -388,9 +406,12 @@ export default function MentorshipPage() {
               🎓 Browse Alumni
             </Link>
           )}
-        </motion.div>
+          </motion.div>
+        </>
       ) : (
-        <div className="grid-2">
+        <>
+          {console.log(`✅ Displaying ${requests.length} requests for filter: ${filter}`)}
+          <div className="grid-2">
           {requests.map((req, i) => (
             <RequestCard
               key={req._id}
@@ -404,6 +425,7 @@ export default function MentorshipPage() {
             />
           ))}
         </div>
+        </>
       )}
     </motion.div>
   );

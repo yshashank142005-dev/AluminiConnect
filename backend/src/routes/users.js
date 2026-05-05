@@ -9,6 +9,7 @@ const {
   getUsers,
   sendConnectionRequest,
   acceptConnection,
+  getConnectionRequests,
   getLeaderboard,
   changePassword,
 } = require('../controllers/userController');
@@ -19,6 +20,7 @@ router.get('/profile/:id', protect, getProfile);
 router.put('/profile', protect, updateProfile);
 router.put('/password', protect, changePassword);
 router.get('/', protect, authorize('admin'), getUsers);
+router.get('/connect/requests', protect, getConnectionRequests);
 router.post('/connect/:id', protect, sendConnectionRequest);
 router.put('/connect/:id/accept', protect, acceptConnection);
 

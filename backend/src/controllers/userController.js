@@ -3,6 +3,7 @@
  */
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
+const Notification = require('../models/Notification');
 
 // @desc    Get user profile
 // @route   GET /api/users/profile/:id
@@ -78,17 +79,34 @@ exports.getUsers = async (req, res, next) => {
 // @access  Private
 exports.sendConnectionRequest = async (req, res, next) => {
   try {
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ success: false, message: 'You cannot connect with yourself' });
+    }
+
     const targetUser = await User.findById(req.params.id);
     if (!targetUser) return res.status(404).json({ success: false, message: 'User not found' });
 
-    if (targetUser.connections.includes(req.user.id)) {
+    if (targetUser.connections.some(id => id.toString() === req.user.id)) {
       return res.status(400).json({ success: false, message: 'Already connected' });
     }
 
-    if (!targetUser.connectionRequests.includes(req.user.id)) {
-      targetUser.connectionRequests.push(req.user.id);
-      await targetUser.save();
+    if (targetUser.connectionRequests.some(id => id.toString() === req.user.id)) {
+      return res.status(400).json({ success: false, message: 'Connection request already sent' });
     }
+
+    targetUser.connectionRequests.push(req.user.id);
+    await targetUser.save();
+
+    const sender = await User.findById(req.user.id).select('name');
+    await Notification.create({
+      recipient: targetUser._id,
+      sender: req.user.id,
+      type: 'connection_request',
+      title: 'New connection request 🤝',
+      message: `${sender?.name || 'Someone'} sent you a connection request.`,
+      link: '/alumni',
+      data: { senderId: req.user.id },
+    });
 
     res.json({ success: true, message: 'Connection request sent' });
   } catch (error) {
@@ -105,11 +123,14 @@ exports.acceptConnection = async (req, res, next) => {
     const requester = await User.findById(req.params.id);
 
     if (!requester) return res.status(404).json({ success: false, message: 'User not found' });
+    if (!currentUser.connectionRequests.some(id => id.toString() === req.params.id)) {
+      return res.status(400).json({ success: false, message: 'No pending request from this user' });
+    }
 
     // Remove from requests, add to connections (both ways)
     currentUser.connectionRequests = currentUser.connectionRequests.filter(id => id.toString() !== req.params.id);
-    if (!currentUser.connections.includes(req.params.id)) currentUser.connections.push(req.params.id);
-    if (!requester.connections.includes(req.user.id)) requester.connections.push(req.user.id);
+    if (!currentUser.connections.some(id => id.toString() === req.params.id)) currentUser.connections.push(req.params.id);
+    if (!requester.connections.some(id => id.toString() === req.user.id)) requester.connections.push(req.user.id);
 
     await Promise.all([currentUser.save(), requester.save()]);
 
@@ -117,7 +138,35 @@ exports.acceptConnection = async (req, res, next) => {
     await currentUser.addEngagement(5);
     await requester.addEngagement(5);
 
+    await Notification.create({
+      recipient: requester._id,
+      sender: req.user.id,
+      type: 'connection_accepted',
+      title: 'Connection accepted ✅',
+      message: `${currentUser.name} accepted your connection request.`,
+      link: `/messages/${req.user.id}`,
+      data: { acceptedBy: req.user.id },
+    });
+
     res.json({ success: true, message: 'Connection accepted' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get pending connection requests for current user
+// @route   GET /api/users/connect/requests
+// @access  Private
+exports.getConnectionRequests = async (req, res, next) => {
+  try {
+    const currentUser = await User.findById(req.user.id)
+      .populate('connectionRequests', 'name profilePhoto role currentRole company industry isVerified');
+
+    res.json({
+      success: true,
+      requests: currentUser?.connectionRequests || [],
+      count: currentUser?.connectionRequests?.length || 0,
+    });
   } catch (error) {
     next(error);
   }

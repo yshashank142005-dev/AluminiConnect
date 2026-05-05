@@ -35,9 +35,22 @@ const SkeletonAlumniCard = () => (
 );
 
 /* ── Alumni Card ── */
-const AlumniCard = ({ alumni, matchScore, onMessage, onRequestMentorship, index = 0 }) => {
+const AlumniCard = ({
+  alumni,
+  matchScore,
+  onMessage,
+  onRequestMentorship,
+  connectionStatus,
+  onConnect,
+  onAcceptConnection,
+  connecting,
+  accepting,
+  currentUserId,
+  index = 0,
+}) => {
   const initials = alumni.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   const isTopMatch = matchScore !== undefined && matchScore >= 85;
+  const isSelf = alumni._id === currentUserId;
 
   return (
     <motion.div
@@ -143,6 +156,44 @@ const AlumniCard = ({ alumni, matchScore, onMessage, onRequestMentorship, index 
               🤝 Mentor
             </motion.button>
           )}
+          {!isSelf && (
+            <>
+              {connectionStatus === 'connected' && (
+                <button className="btn btn-secondary btn-sm" disabled title="Already connected">
+                  ✅ Connected
+                </button>
+              )}
+              {connectionStatus === 'incoming' && (
+                <motion.button
+                  onClick={() => onAcceptConnection(alumni._id)}
+                  className="btn btn-primary btn-sm"
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.95 }}
+                  disabled={accepting}
+                  title="Accept request"
+                >
+                  {accepting ? 'Accepting…' : '✅ Accept'}
+                </motion.button>
+              )}
+              {connectionStatus === 'sent' && (
+                <button className="btn btn-secondary btn-sm" disabled title="Request sent">
+                  ⏳ Pending
+                </button>
+              )}
+              {connectionStatus === 'none' && (
+                <motion.button
+                  onClick={() => onConnect(alumni._id)}
+                  className="btn btn-secondary btn-sm"
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.95 }}
+                  disabled={connecting}
+                  title="Send connection request"
+                >
+                  {connecting ? 'Sending…' : '🔗 Connect'}
+                </motion.button>
+              )}
+            </>
+          )}
         </div>
       </div>
     </motion.div>
@@ -230,7 +281,7 @@ const MentorshipModal = ({ alumni, onClose, onSubmit }) => {
 
 /* ── Page ── */
 export default function AlumniPage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const navigate = useNavigate();
   const [alumni, setAlumni] = useState([]);
   const [matches, setMatches] = useState([]);
@@ -243,6 +294,10 @@ export default function AlumniPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [sentRequests, setSentRequests] = useState([]);
+  const [connectLoadingId, setConnectLoadingId] = useState('');
+  const [acceptLoadingId, setAcceptLoadingId] = useState('');
 
   const fetchAlumni = useCallback(async () => {
     setLoading(true);
@@ -265,6 +320,13 @@ export default function AlumniPage() {
     } catch {}
   };
 
+  const fetchConnectionRequests = async () => {
+    try {
+      const res = await api.get('/users/connect/requests');
+      setPendingRequests(res.data.requests || []);
+    } catch {}
+  };
+
   const handleSearch = async () => {
     if (!search.trim()) return fetchAlumni();
     try {
@@ -277,7 +339,47 @@ export default function AlumniPage() {
   };
 
   useEffect(() => { fetchAlumni(); }, [fetchAlumni]);
-  useEffect(() => { fetchMatches(); }, []);
+  useEffect(() => { fetchMatches(); fetchConnectionRequests(); }, []);
+
+  const getConnectionStatus = (alumniEntry) => {
+    const alumniId = alumniEntry?._id;
+    const connectedIds = new Set((user?.connections || []).map(id => id?.toString?.() || id));
+    if (connectedIds.has(alumniId)) return 'connected';
+    if (pendingRequests.some(r => r._id === alumniId)) return 'incoming';
+    if ((alumniEntry?.connectionRequests || []).some(id => (id?.toString?.() || id) === user?._id)) return 'sent';
+    if (sentRequests.includes(alumniId)) return 'sent';
+    return 'none';
+  };
+
+  const handleConnect = async (alumniId) => {
+    try {
+      setConnectLoadingId(alumniId);
+      await api.post(`/users/connect/${alumniId}`);
+      setSentRequests(prev => (prev.includes(alumniId) ? prev : [...prev, alumniId]));
+      toast.success('Connection request sent');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to send connection request');
+    } finally {
+      setConnectLoadingId('');
+    }
+  };
+
+  const handleAcceptConnection = async (requesterId) => {
+    try {
+      setAcceptLoadingId(requesterId);
+      await api.put(`/users/connect/${requesterId}/accept`);
+      setPendingRequests(prev => prev.filter(r => r._id !== requesterId));
+      updateUser({
+        ...user,
+        connections: [...(user?.connections || []), requesterId],
+      });
+      toast.success('Connection accepted');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to accept connection');
+    } finally {
+      setAcceptLoadingId('');
+    }
+  };
 
   const handleMentorshipSubmit = async (alumniId, message, goals) => {
     try {
@@ -354,6 +456,31 @@ export default function AlumniPage() {
               {t.label}
             </motion.button>
           ))}
+        </motion.div>
+      )}
+
+      {pendingRequests.length > 0 && (
+        <motion.div
+          className="card card-p"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ marginBottom: '18px' }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: '10px' }}>🤝 Pending connection requests ({pendingRequests.length})</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+            {pendingRequests.slice(0, 5).map(reqUser => (
+              <div key={reqUser._id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--bg-card)' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600 }}>{reqUser.name}</span>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => handleAcceptConnection(reqUser._id)}
+                  disabled={acceptLoadingId === reqUser._id}
+                >
+                  {acceptLoadingId === reqUser._id ? 'Accepting…' : 'Accept'}
+                </button>
+              </div>
+            ))}
+          </div>
         </motion.div>
       )}
 
@@ -455,6 +582,12 @@ export default function AlumniPage() {
                 matchScore={a._matchScore}
                 onMessage={a => navigate(`/messages/${a._id}`)}
                 onRequestMentorship={setSelectedAlumni}
+                connectionStatus={getConnectionStatus(a)}
+                onConnect={handleConnect}
+                onAcceptConnection={handleAcceptConnection}
+                connecting={connectLoadingId === a._id}
+                accepting={acceptLoadingId === a._id}
+                currentUserId={user?._id}
               />
             ))}
           </div>

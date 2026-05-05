@@ -89,10 +89,14 @@ exports.getRequests = async (req, res, next) => {
 
     if (status) query.status = status;
 
+    console.log('🔍 Mentorship getRequests - User:', req.user._id, 'Role:', req.user.role, 'Query:', query);
+
     const requests = await MentorshipRequest.find(query)
       .populate('student', 'name profilePhoto department skills careerInterests bio goals')
       .populate('alumni', 'name profilePhoto company currentRole industry skills bio')
       .sort({ createdAt: -1 });
+
+    console.log(`✅ Found ${requests.length} requests`);
 
     res.json({ success: true, requests });
   } catch (error) {

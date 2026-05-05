@@ -29,7 +29,7 @@ exports.getAlumni = async (req, res, next) => {
 
     const total = await User.countDocuments(query);
     const alumni = await User.find(query)
-      .select('name profilePhoto bio currentRole company industry location skills careerInterests yearsOfExperience isVerified isAvailableForMentorship engagementScore lastSeen')
+      .select('name profilePhoto bio currentRole company industry location skills careerInterests yearsOfExperience isVerified isAvailableForMentorship engagementScore lastSeen connectionRequests')
       .sort({ isVerified: -1, engagementScore: -1 })
       .skip((Number(page) - 1) * Number(limit))
       .limit(Number(limit));
@@ -74,7 +74,7 @@ exports.getMyMatches = async (req, res, next) => {
     const allAlumni = await User.find({
       role: 'alumni',
       isActive: true,
-    }).select('name profilePhoto bio currentRole company industry location skills careerInterests yearsOfExperience isVerified isAvailableForMentorship engagementScore');
+    }).select('name profilePhoto bio currentRole company industry location skills careerInterests yearsOfExperience isVerified isAvailableForMentorship engagementScore connectionRequests');
 
     const matches = getTopMatches(student, allAlumni, 10);
 
@@ -106,7 +106,7 @@ exports.searchAlumni = async (req, res, next) => {
         { skills: regex },
       ],
     })
-      .select('name profilePhoto bio currentRole company industry location skills isVerified isAvailableForMentorship')
+      .select('name profilePhoto bio currentRole company industry location skills isVerified isAvailableForMentorship connectionRequests')
       .limit(20);
 
     res.json({ success: true, alumni });
