@@ -1,15 +1,12 @@
 /**
- * Email Service — OTP delivery with Gmail SMTP + Resend fallback
+ * Email Service — OTP delivery
  *
- * Priority:
- *   1. Resend API  (set RESEND_API_KEY)  ← most reliable on cloud/Render
- *   2. Gmail SMTP  (set GMAIL_USER + GMAIL_APP_PASSWORD) ← with 10s timeout to prevent hanging
- *   3. Console log fallback (dev mode)
- *
- * Why the 10s timeout?
- *   Cloud providers (Render, Railway, etc.) sometimes block outbound SMTP.
- *   Without a timeout, `await transporter.sendMail()` hangs forever,
- *   causing the frontend to show "Sending..." indefinitely.
+ * Provider priority:
+ *   1. Brevo SMTP  (set BREVO_USER + BREVO_SMTP_KEY)
+ *      - Free: 300 emails/day, NO domain verification needed, sends to ANY address
+ *      - Works on Render (HTTPS-based SMTP relay, port 587)
+ *   2. Gmail SMTP  (set GMAIL_USER + GMAIL_APP_PASSWORD) ← 10s timeout fallback
+ *   3. Console log (dev mode — no provider configured)
  *
  * OTPs are persisted in MongoDB (OtpVerification) with a TTL index
  * so they survive server restarts on Render's free tier.
@@ -18,6 +15,22 @@ const nodemailer = require('nodemailer');
 const OtpVerification = require('../models/OtpVerification');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/** Returns a Brevo (Sendinblue) SMTP transporter, or null if env vars not set. */
+const getBrevoTransporter = () => {
+  const user = (process.env.BREVO_USER || '').trim();
+  const pass = (process.env.BREVO_SMTP_KEY || '').trim();
+  if (!user || !pass) return null;
+
+  return nodemailer.createTransport({
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false, // STARTTLS
+    auth: { user, pass },
+    connectionTimeout: 15000,
+    socketTimeout: 15000,
+  });
+};
 
 /** Returns a Gmail SMTP transporter, or null if env vars not set. */
 const getGmailTransporter = () => {
@@ -28,28 +41,9 @@ const getGmailTransporter = () => {
   return nodemailer.createTransport({
     service: 'gmail',
     auth: { user, pass },
-    connectionTimeout: 10000, // 10 s — abort if Gmail can't be reached
+    connectionTimeout: 10000,
     socketTimeout: 10000,
   });
-};
-
-/** Returns a Resend sender function, or null if API key not set. */
-const getResendSender = () => {
-  const key = (process.env.RESEND_API_KEY || '').trim();
-  if (!key || key === 're_your_api_key_here') return null;
-
-  const { Resend } = require('resend');
-  const client = new Resend(key);
-
-  return async (to, html, subject) => {
-    const { error } = await client.emails.send({
-      from: 'AlumniConnect AI <onboarding@resend.dev>',
-      to: [to],
-      subject,
-      html,
-    });
-    if (error) throw new Error(error.message || 'Resend API error');
-  };
 };
 
 /** Wraps a promise with a timeout — rejects after `ms` milliseconds. */
@@ -79,8 +73,8 @@ const otpHtml = (otp) => `
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Generate a 6-digit OTP, persist it to MongoDB, then try to email it.
- * Tries Resend first, falls back to Gmail SMTP, then console log.
+ * Generate a 6-digit OTP, persist it to MongoDB, then email it.
+ * Tries Brevo first, falls back to Gmail SMTP, then console log.
  */
 exports.sendOtp = async (email) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -94,15 +88,29 @@ exports.sendOtp = async (email) => {
     { upsert: true, new: true }
   );
 
-  // ── Try Resend first (HTTPS, most reliable on cloud) ──────────────────────
-  const resendSend = getResendSender();
-  if (resendSend) {
-    await resendSend(email, html, subject);
-    console.log(`[EmailService] OTP sent via Resend to ${email}`);
-    return { delivered: true };
+  // ── Try Brevo SMTP (free, no domain needed, works on Render) ──────────────
+  const brevoTransporter = getBrevoTransporter();
+  if (brevoTransporter) {
+    try {
+      await withTimeout(
+        brevoTransporter.sendMail({
+          from: `"AlumniConnect AI" <${process.env.BREVO_USER}>`,
+          to: email,
+          subject,
+          html,
+        }),
+        15000,
+        'Brevo SMTP timed out after 15s.'
+      );
+      console.log(`[EmailService] OTP sent via Brevo to ${email}`);
+      return { delivered: true };
+    } catch (err) {
+      console.error('[EmailService] Brevo SMTP error:', err.message);
+      // Fall through to Gmail
+    }
   }
 
-  // ── Try Gmail SMTP with 10s timeout (prevents frontend from hanging) ───────
+  // ── Try Gmail SMTP with 10s timeout ───────────────────────────────────────
   const gmailTransporter = getGmailTransporter();
   if (gmailTransporter) {
     try {
@@ -114,18 +122,17 @@ exports.sendOtp = async (email) => {
           html,
         }),
         10000,
-        'Gmail SMTP timed out after 10 s. SMTP may be blocked on this server. Set RESEND_API_KEY as an alternative.'
+        'Gmail SMTP timed out after 10s. SMTP may be blocked on this server.'
       );
       console.log(`[EmailService] OTP sent via Gmail SMTP to ${email}`);
       return { delivered: true };
     } catch (err) {
-      // Surface the error clearly (auth failure, timeout, etc.)
       console.error('[EmailService] Gmail SMTP error:', err.message);
-      throw err;
+      throw err; // Surface error to controller
     }
   }
 
-  // ── Fallback: no email provider configured ────────────────────────────────
+  // ── No provider configured ─────────────────────────────────────────────────
   console.warn(`[EmailService] No email provider configured. OTP for ${email}: ${otp}`);
   return { delivered: false, otp };
 };
