@@ -844,6 +844,180 @@ ${summary.slice(0, 3000)}`;
   return mockCvReview({ type: 'video', targetRole });
 };
 
+const normalizeCvComparison = (payload = {}, { targetRole = '' } = {}) => {
+  const deltas = payload.categoryDeltas || {};
+  const scoreBefore = clampScore(payload.scoreBefore);
+  const scoreAfter = clampScore(payload.scoreAfter);
+
+  return {
+    targetRole: targetRole || payload.targetRole || 'General Role',
+    scoreBefore,
+    scoreAfter,
+    overallDelta: scoreAfter - scoreBefore,
+    categoryDeltas: {
+      ats: Math.round(Number(deltas.ats) || 0),
+      impact: Math.round(Number(deltas.impact) || 0),
+      structure: Math.round(Number(deltas.structure) || 0),
+      roleFit: Math.round(Number(deltas.roleFit) || 0),
+      communication: Math.round(Number(deltas.communication) || 0),
+    },
+    improvements: Array.isArray(payload.improvements) ? payload.improvements.slice(0, 6) : [],
+    regressions: Array.isArray(payload.regressions) ? payload.regressions.slice(0, 4) : [],
+    nextActions: Array.isArray(payload.nextActions) ? payload.nextActions.slice(0, 6) : [],
+    summary: String(payload.summary || '').trim(),
+    generatedAt: new Date().toISOString(),
+  };
+};
+
+const mockCvComparison = ({ targetRole = '' } = {}) => normalizeCvComparison({
+  scoreBefore: 68,
+  scoreAfter: 79,
+  categoryDeltas: { ats: 9, impact: 13, structure: 7, roleFit: 10, communication: 8 },
+  improvements: [
+    'Added clearer role-targeted headline and summary',
+    'Project bullets now include quantified outcomes',
+    'Section ordering is more recruiter friendly',
+  ],
+  regressions: ['Some bullets became too long and should be tightened'],
+  nextActions: [
+    'Trim long bullets to under 2 lines each',
+    'Add one more metric-driven bullet in latest project',
+    'Include stronger role keywords from target JD',
+  ],
+  summary: 'New CV version shows a strong overall upgrade, especially in impact and role-fit.',
+}, { targetRole });
+
+const compareCvVersions = async ({ oldCvText = '', newCvText = '', targetRole = '', userProfile = {} }) => {
+  const prompt = `You are an expert recruiter comparing two CV versions (old vs new).
+Return ONLY valid JSON:
+{
+  "targetRole": "string",
+  "scoreBefore": 0,
+  "scoreAfter": 0,
+  "categoryDeltas": { "ats": 0, "impact": 0, "structure": 0, "roleFit": 0, "communication": 0 },
+  "improvements": ["string"],
+  "regressions": ["string"],
+  "nextActions": ["string"],
+  "summary": "string"
+}
+
+Rules:
+- scoreBefore/scoreAfter in range 0-100.
+- categoryDeltas are signed integers (new minus old).
+- Focus on ATS, impact, structure, role-fit, communication.
+
+Target Role: ${targetRole || 'Not provided'}
+User skills: ${(userProfile.skills || []).join(', ') || 'N/A'}
+
+OLD CV:
+${oldCvText.slice(0, 9000)}
+
+NEW CV:
+${newCvText.slice(0, 9000)}`;
+
+  if (openai) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 1200,
+        response_format: { type: 'json_object' },
+      });
+      const parsed = JSON.parse(completion.choices[0].message.content);
+      return normalizeCvComparison(parsed, { targetRole });
+    } catch (error) {
+      console.error('OpenAI CV comparison error:', error.message);
+    }
+  }
+  return mockCvComparison({ targetRole });
+};
+
+const normalizeInterviewPack = (payload = {}, { targetRole = '' } = {}) => {
+  const questions = Array.isArray(payload.questions) ? payload.questions : [];
+  return {
+    targetRole: targetRole || payload.targetRole || 'General Role',
+    summary: String(payload.summary || '').trim(),
+    questions: questions.slice(0, 10).map((q, idx) => ({
+      question: String(q?.question || '').trim(),
+      intent: String(q?.intent || '').trim(),
+      suggestedAnswer: String(q?.suggestedAnswer || '').trim(),
+      difficulty: String(q?.difficulty || 'medium').trim(),
+      order: idx + 1,
+    })).filter((q) => q.question && q.suggestedAnswer),
+    generatedAt: new Date().toISOString(),
+  };
+};
+
+const mockInterviewPack = ({ targetRole = '' } = {}) => normalizeInterviewPack({
+  summary: 'These questions focus on your projects, measurable impact, and role readiness.',
+  questions: [
+    {
+      question: 'Walk me through a project where you improved system performance.',
+      intent: 'Evaluate technical depth and ownership.',
+      suggestedAnswer: 'Explain baseline metric, optimization decisions, implementation, and final measurable improvement.',
+      difficulty: 'medium',
+    },
+    {
+      question: 'How did you prioritize features under deadline pressure?',
+      intent: 'Assess product thinking and tradeoff decisions.',
+      suggestedAnswer: 'Describe constraints, prioritization framework, stakeholder alignment, and outcome quality.',
+      difficulty: 'medium',
+    },
+    {
+      question: 'What part of your experience best matches this role?',
+      intent: 'Check role-fit and communication clarity.',
+      suggestedAnswer: 'Map top 2-3 role requirements directly to your most relevant projects with quantified results.',
+      difficulty: 'easy',
+    },
+  ],
+}, { targetRole });
+
+const generateCvInterviewQuestions = async ({ cvText = '', targetRole = '', userProfile = {} }) => {
+  const prompt = `You are an interview coach.
+Given this candidate CV, generate role-specific interview questions with strong suggested answers.
+Return ONLY valid JSON:
+{
+  "targetRole": "string",
+  "summary": "string",
+  "questions": [
+    {
+      "question": "string",
+      "intent": "string",
+      "suggestedAnswer": "string",
+      "difficulty": "easy|medium|hard"
+    }
+  ]
+}
+
+Rules:
+- Generate exactly 8 questions.
+- Suggested answers should be concise (2-4 sentences) and practical.
+- Use CV context; do not invent impossible experience.
+
+Target Role: ${targetRole || 'Not provided'}
+User skills: ${(userProfile.skills || []).join(', ') || 'N/A'}
+CV:
+${cvText.slice(0, 12000)}`;
+
+  if (openai) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.5,
+        max_tokens: 1800,
+        response_format: { type: 'json_object' },
+      });
+      const parsed = JSON.parse(completion.choices[0].message.content);
+      return normalizeInterviewPack(parsed, { targetRole });
+    } catch (error) {
+      console.error('OpenAI CV interview questions error:', error.message);
+    }
+  }
+  return mockInterviewPack({ targetRole });
+};
+
 module.exports = {
   generateCareerPath,
   generateIcebreaker,
@@ -853,4 +1027,6 @@ module.exports = {
   generateCareerGps,
   analyzeCv,
   analyzeVideoCv,
+  compareCvVersions,
+  generateCvInterviewQuestions,
 };

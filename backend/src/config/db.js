@@ -2,7 +2,6 @@
  * MongoDB Connection Configuration
  */
 const mongoose = require('mongoose');
-const dns = require('dns');
 
 const connectDB = async () => {
   const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/alumniconnect';
@@ -10,11 +9,7 @@ const connectDB = async () => {
   const localUri = 'mongodb://127.0.0.1:27017/alumniconnect';
 
   try {
-    // Some Windows/ISP DNS resolvers fail Atlas SRV lookups in Node (querySrv ECONNREFUSED).
-    // Force known public DNS for Atlas connections to make startup reliable.
-    if (isAtlas) {
-      dns.setServers(['8.8.8.8', '1.1.1.1']);
-    }
+    // Use OS resolver by default; forcing public DNS can fail on restricted networks.
     const conn = await mongoose.connect(uri, {
       serverSelectionTimeoutMS: 5000,
     });

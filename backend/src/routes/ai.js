@@ -12,6 +12,8 @@ const {
   getCareerGps,
   reviewCv,
   reviewVideoCv,
+  compareCvVersions,
+  generateCvInterviewQuestions,
 } = require('../controllers/aiController');
 const { protect } = require('../middleware/auth');
 const { cvUpload } = require('../middleware/upload');
@@ -24,6 +26,8 @@ router.get('/digital-twin', protect, getDigitalTwin);
 router.post('/career-gps', protect, getCareerGps);
 router.post('/cv-review', protect, cvUpload.single('cv'), reviewCv);
 router.post('/video-cv-review', protect, reviewVideoCv);
+router.post('/cv-compare', protect, cvUpload.fields([{ name: 'oldCv', maxCount: 1 }, { name: 'newCv', maxCount: 1 }]), compareCvVersions);
+router.post('/cv-interview-questions', protect, cvUpload.single('cv'), generateCvInterviewQuestions);
 
 module.exports = router;
 

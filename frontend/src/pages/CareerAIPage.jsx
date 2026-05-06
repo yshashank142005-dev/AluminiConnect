@@ -302,6 +302,86 @@ const CvVideoAnalyzerResults = ({ result }) => {
   );
 };
 
+const CvComparisonResults = ({ data }) => {
+  if (!data) return null;
+  const items = [
+    ['ATS', data.categoryDeltas?.ats],
+    ['Impact', data.categoryDeltas?.impact],
+    ['Structure', data.categoryDeltas?.structure],
+    ['Role Fit', data.categoryDeltas?.roleFit],
+    ['Communication', data.categoryDeltas?.communication],
+  ];
+  const formatDelta = (v) => `${v >= 0 ? '+' : ''}${v}`;
+
+  return (
+    <div className="card card-p">
+      <h3 style={{ marginBottom: '10px' }}>📈 CV Version Comparison</h3>
+      <div className="grid-2" style={{ marginBottom: '12px' }}>
+        <div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Score Before</div>
+          <div style={{ fontSize: '24px', fontWeight: 800 }}>{data.scoreBefore}%</div>
+        </div>
+        <div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Score After</div>
+          <div style={{ fontSize: '24px', fontWeight: 800 }}>{data.scoreAfter}%</div>
+        </div>
+      </div>
+      <div className="tag tag-cyan" style={{ marginBottom: '12px' }}>
+        Overall Delta: {formatDelta(data.overallDelta)} points
+      </div>
+      <div className="grid-2" style={{ marginBottom: '12px' }}>
+        {items.map(([label, delta]) => (
+          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', borderBottom: '1px solid var(--border)', paddingBottom: '6px' }}>
+            <span>{label}</span>
+            <strong style={{ color: delta >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatDelta(delta || 0)}</strong>
+          </div>
+        ))}
+      </div>
+      {!!data.summary && <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '10px' }}>{data.summary}</p>}
+      <div className="grid-2">
+        <div>
+          <div style={{ fontWeight: 700, marginBottom: '6px' }}>✅ Improvements</div>
+          <ul style={{ listStyle: 'none', display: 'grid', gap: '6px' }}>
+            {(data.improvements || []).map((item, idx) => <li key={idx} style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>• {item}</li>)}
+          </ul>
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, marginBottom: '6px' }}>🎯 Next Actions</div>
+          <ul style={{ listStyle: 'none', display: 'grid', gap: '6px' }}>
+            {(data.nextActions || []).map((item, idx) => <li key={idx} style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>• {item}</li>)}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CvInterviewQuestionsResults = ({ data }) => {
+  if (!data) return null;
+  return (
+    <div className="card card-p">
+      <h3 style={{ marginBottom: '8px' }}>🎤 Interview Questions From CV</h3>
+      {!!data.summary && <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '12px' }}>{data.summary}</p>}
+      <div className="flex-col gap-12">
+        {(data.questions || []).map((item) => (
+          <div key={item.order} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
+              <strong style={{ fontSize: '14px' }}>Q{item.order}. {item.question}</strong>
+              <span className="tag" style={{ fontSize: '11px' }}>{item.difficulty}</span>
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              Intent: {item.intent || 'Role-fit evaluation'}
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              Suggested answer: {item.suggestedAnswer}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export default function CareerAIPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -326,6 +406,15 @@ export default function CareerAIPage() {
   const [videoTargetRole, setVideoTargetRole] = useState('');
   const [analyzerLoading, setAnalyzerLoading] = useState(false);
   const [analyzerResult, setAnalyzerResult] = useState(null);
+  const [oldCvFile, setOldCvFile] = useState(null);
+  const [newCvFile, setNewCvFile] = useState(null);
+  const [compareTargetRole, setCompareTargetRole] = useState('');
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareResult, setCompareResult] = useState(null);
+  const [interviewCvFile, setInterviewCvFile] = useState(null);
+  const [interviewTargetRole, setInterviewTargetRole] = useState('');
+  const [interviewLoading, setInterviewLoading] = useState(false);
+  const [interviewResult, setInterviewResult] = useState(null);
   const bottomRef = useRef(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -432,6 +521,63 @@ export default function CareerAIPage() {
       toast.error(error?.response?.data?.message || 'Video CV analysis failed');
     } finally {
       setAnalyzerLoading(false);
+    }
+  };
+
+  const validateCvFile = (file) => {
+    if (!file) return 'CV file is required';
+    const allowedTypes = [
+      'application/pdf',
+      'text/plain',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (!allowedTypes.includes(file.type)) return 'Unsupported format. Use PDF, DOCX, or TXT';
+    if (file.size > MAX_CV_SIZE_MB * 1024 * 1024) return `Max file size is ${MAX_CV_SIZE_MB}MB`;
+    return '';
+  };
+
+  const handleCompareCv = async () => {
+    const oldError = validateCvFile(oldCvFile);
+    const newError = validateCvFile(newCvFile);
+    if (oldError) return toast.error(`Old CV: ${oldError}`);
+    if (newError) return toast.error(`New CV: ${newError}`);
+
+    setCompareLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('oldCv', oldCvFile);
+      formData.append('newCv', newCvFile);
+      formData.append('targetRole', compareTargetRole.trim());
+      const res = await api.post('/ai/cv-compare', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setCompareResult(res.data.data);
+      toast.success('CV comparison generated');
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'CV comparison failed');
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  const handleGenerateInterviewQuestions = async () => {
+    const fileError = validateCvFile(interviewCvFile);
+    if (fileError) return toast.error(fileError);
+
+    setInterviewLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('cv', interviewCvFile);
+      formData.append('targetRole', interviewTargetRole.trim());
+      const res = await api.post('/ai/cv-interview-questions', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setInterviewResult(res.data.data);
+      toast.success('Interview pack generated');
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Interview question generation failed');
+    } finally {
+      setInterviewLoading(false);
     }
   };
 
@@ -737,6 +883,46 @@ export default function CareerAIPage() {
             <div className="card card-p" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
               V1 scope note: this analysis focuses on structure, clarity, role-fit, and recommendations from transcript/summary context. It does not evaluate voice tone, pacing, or body language.
             </div>
+
+            <div className="card card-p">
+              <h3 style={{ marginBottom: '10px' }}>Section C: Version Comparison</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                Upload old and new CV versions to see category score delta.
+              </p>
+              <div className="form-group">
+                <label className="label">Old CV</label>
+                <input type="file" className="input" accept=".pdf,.docx,.txt" onChange={(e) => setOldCvFile(e.target.files?.[0] || null)} />
+              </div>
+              <div className="form-group">
+                <label className="label">New CV</label>
+                <input type="file" className="input" accept=".pdf,.docx,.txt" onChange={(e) => setNewCvFile(e.target.files?.[0] || null)} />
+              </div>
+              <div className="form-group">
+                <label className="label">Target Role (optional)</label>
+                <input className="input" placeholder="e.g. Full Stack Developer" value={compareTargetRole} onChange={(e) => setCompareTargetRole(e.target.value)} />
+              </div>
+              <button type="button" className="btn btn-primary btn-full" disabled={compareLoading || !oldCvFile || !newCvFile} onClick={handleCompareCv}>
+                {compareLoading ? <><span className="spinner spinner-sm" /> Comparing…</> : 'Compare CV Versions'}
+              </button>
+            </div>
+
+            <div className="card card-p">
+              <h3 style={{ marginBottom: '10px' }}>Section D: Interview Questions from CV</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                Generate role-specific interview questions with suggested strong answers.
+              </p>
+              <div className="form-group">
+                <label className="label">CV File</label>
+                <input type="file" className="input" accept=".pdf,.docx,.txt" onChange={(e) => setInterviewCvFile(e.target.files?.[0] || null)} />
+              </div>
+              <div className="form-group">
+                <label className="label">Target Role (optional)</label>
+                <input className="input" placeholder="e.g. Data Analyst" value={interviewTargetRole} onChange={(e) => setInterviewTargetRole(e.target.value)} />
+              </div>
+              <button type="button" className="btn btn-primary btn-full" disabled={interviewLoading || !interviewCvFile} onClick={handleGenerateInterviewQuestions}>
+                {interviewLoading ? <><span className="spinner spinner-sm" /> Generating…</> : 'Generate Interview Questions'}
+              </button>
+            </div>
           </div>
 
           <div>
@@ -755,6 +941,8 @@ export default function CareerAIPage() {
               </div>
             )}
             {!analyzerLoading && analyzerResult && <CvVideoAnalyzerResults result={analyzerResult} />}
+            {!compareLoading && compareResult && <div style={{ marginTop: '16px' }}><CvComparisonResults data={compareResult} /></div>}
+            {!interviewLoading && interviewResult && <div style={{ marginTop: '16px' }}><CvInterviewQuestionsResults data={interviewResult} /></div>}
           </div>
         </div>
       )}

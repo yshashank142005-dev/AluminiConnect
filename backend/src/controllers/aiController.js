@@ -350,3 +350,105 @@ exports.reviewVideoCv = async (req, res, next) => {
     return next(error);
   }
 };
+
+// @desc    Compare old/new CV versions
+// @route   POST /api/ai/cv-compare
+// @access  Private
+exports.compareCvVersions = async (req, res, next) => {
+  const oldPath = req.files?.oldCv?.[0]?.path;
+  const newPath = req.files?.newCv?.[0]?.path;
+  try {
+    const user = await User.findById(req.user.id);
+    const oldFile = req.files?.oldCv?.[0];
+    const newFile = req.files?.newCv?.[0];
+    const targetRole = (req.body.targetRole || '').trim();
+
+    if (!oldFile || !newFile) {
+      return res.status(400).json({
+        success: false,
+        message: 'Both oldCv and newCv files are required',
+      });
+    }
+    if (oldFile.size > MAX_CV_BYTES || newFile.size > MAX_CV_BYTES) {
+      return res.status(400).json({
+        success: false,
+        message: 'Each file must be within 10MB upload limit',
+      });
+    }
+
+    const [oldCvTextRaw, newCvTextRaw] = await Promise.all([
+      readCvText(oldFile),
+      readCvText(newFile),
+    ]);
+    const oldCvText = oldCvTextRaw.trim();
+    const newCvText = newCvTextRaw.trim();
+
+    if (!oldCvText || !newCvText) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to extract text from one or both CV files',
+      });
+    }
+
+    const data = await aiService.compareCvVersions({
+      oldCvText,
+      newCvText,
+      targetRole,
+      userProfile: {
+        name: user.name,
+        role: user.role,
+        skills: user.skills || [],
+        interests: user.careerInterests || [],
+      },
+    });
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    return next(error);
+  } finally {
+    await Promise.all([safeUnlink(oldPath), safeUnlink(newPath)]);
+  }
+};
+
+// @desc    Generate interview questions from CV
+// @route   POST /api/ai/cv-interview-questions
+// @access  Private
+exports.generateCvInterviewQuestions = async (req, res, next) => {
+  const filePath = req.file?.path;
+  try {
+    const user = await User.findById(req.user.id);
+    const targetRole = (req.body.targetRole || '').trim();
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'CV file is required' });
+    }
+    if (req.file.size > MAX_CV_BYTES) {
+      return res.status(400).json({ success: false, message: 'File exceeds 10MB upload limit' });
+    }
+
+    const cvText = (await readCvText(req.file)).trim();
+    if (!cvText) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to extract CV text. Upload a readable TXT/PDF/DOCX file.',
+      });
+    }
+
+    const data = await aiService.generateCvInterviewQuestions({
+      cvText,
+      targetRole,
+      userProfile: {
+        name: user.name,
+        role: user.role,
+        skills: user.skills || [],
+        interests: user.careerInterests || [],
+      },
+    });
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    return next(error);
+  } finally {
+    await safeUnlink(filePath);
+  }
+};
