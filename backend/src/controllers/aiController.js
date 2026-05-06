@@ -2,8 +2,20 @@
  * AI Controller — Career path, chatbot, icebreakers, daily coach, digital twin
  */
 const User = require('../models/User');
+const fs = require('fs/promises');
+const path = require('path');
 const aiService = require('../services/aiService');
 const { getTopMatches } = require('../utils/matchingAlgorithm');
+const { MAX_CV_BYTES, MIN_VIDEO_CONTEXT_CHARS } = require('../utils/cvReviewSchema');
+
+let mammoth = null;
+let pdfParse = null;
+try {
+  mammoth = require('mammoth');
+} catch (_e) {}
+try {
+  pdfParse = require('pdf-parse');
+} catch (_e) {}
 
 // In-memory daily coach cache (resets on server restart, refreshes daily)
 const dailyCoachCache = new Map();
@@ -211,5 +223,130 @@ exports.getCareerGps = async (req, res, next) => {
     res.json({ success: true, data: gps });
   } catch (error) {
     next(error);
+  }
+};
+
+const safeUnlink = async (filePath) => {
+  if (!filePath) return;
+  try {
+    await fs.unlink(filePath);
+  } catch (_e) {}
+};
+
+const readCvText = async (file) => {
+  if (!file?.path) return '';
+  const ext = path.extname(file.originalname || '').toLowerCase();
+
+  if (ext === '.txt') {
+    return fs.readFile(file.path, 'utf8');
+  }
+  if (ext === '.docx' && mammoth) {
+    const result = await mammoth.extractRawText({ path: file.path });
+    return result.value || '';
+  }
+  if (ext === '.pdf' && pdfParse) {
+    const data = await fs.readFile(file.path);
+    const parsed = await pdfParse(data);
+    return parsed.text || '';
+  }
+
+  // Fallback when parser dependency is unavailable for binary formats.
+  return '';
+};
+
+// @desc    Analyze uploaded CV
+// @route   POST /api/ai/cv-review
+// @access  Private
+exports.reviewCv = async (req, res, next) => {
+  const filePath = req.file?.path;
+  try {
+    const user = await User.findById(req.user.id);
+    const targetRole = (req.body.targetRole || '').trim();
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'CV file is required' });
+    }
+    if (req.file.size > MAX_CV_BYTES) {
+      return res.status(400).json({ success: false, message: 'File exceeds 10MB upload limit' });
+    }
+
+    const cvText = (await readCvText(req.file)).trim();
+    if (!cvText) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to extract CV text. Upload a readable TXT/PDF/DOCX file.',
+      });
+    }
+
+    const data = await aiService.analyzeCv({
+      cvText,
+      targetRole,
+      userProfile: {
+        name: user.name,
+        role: user.role,
+        skills: user.skills || [],
+        interests: user.careerInterests || [],
+        goals: user.goals || '',
+      },
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return next(error);
+  } finally {
+    await safeUnlink(filePath);
+  }
+};
+
+// @desc    Analyze video CV from context
+// @route   POST /api/ai/video-cv-review
+// @access  Private
+exports.reviewVideoCv = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    const {
+      videoUrl = '',
+      transcript = '',
+      summary = '',
+      targetRole = '',
+    } = req.body;
+
+    const cleanUrl = videoUrl.trim();
+    const cleanTranscript = transcript.trim();
+    const cleanSummary = summary.trim();
+    const contextLength = (cleanTranscript + cleanSummary).trim().length;
+
+    if (!cleanUrl) {
+      return res.status(400).json({ success: false, message: 'Video link is required' });
+    }
+    try {
+      const parsed = new URL(cleanUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('bad protocol');
+    } catch (_e) {
+      return res.status(400).json({ success: false, message: 'Provide a valid video URL' });
+    }
+
+    if (contextLength < MIN_VIDEO_CONTEXT_CHARS) {
+      return res.status(400).json({
+        success: false,
+        message: `Transcript/summary must have at least ${MIN_VIDEO_CONTEXT_CHARS} characters combined`,
+      });
+    }
+
+    const data = await aiService.analyzeVideoCv({
+      videoUrl: cleanUrl,
+      transcript: cleanTranscript,
+      summary: cleanSummary,
+      targetRole: targetRole.trim(),
+      userProfile: {
+        name: user.name,
+        role: user.role,
+        skills: user.skills || [],
+        interests: user.careerInterests || [],
+        goals: user.goals || '',
+      },
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return next(error);
   }
 };

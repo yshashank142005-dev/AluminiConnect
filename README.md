@@ -161,6 +161,8 @@ int219/
 | GET | `/api/events` | List events |
 | POST | `/api/ai/career-path` | Generate career path |
 | POST | `/api/ai/chat` | CareerBot chat |
+| POST | `/api/ai/cv-review` | Analyze uploaded CV (PDF/DOCX/TXT up to 10MB) |
+| POST | `/api/ai/video-cv-review` | Analyze Video CV link + transcript/summary |
 | GET | `/api/admin/stats` | Dashboard stats |
 
 ---
@@ -176,3 +178,14 @@ int219/
 - 🏆 **Gamification** — engagement scores, badges
 - 🔔 **Live Notifications** — real-time push via Socket.IO
 - 🛡️ **Admin Dashboard** — verify alumni, manage users
+
+---
+
+## ✅ CV/Video Analyzer Demo Checklist (V1)
+
+- [ ] Open `Career AI` and switch to `CV / Video Analyzer`
+- [ ] Upload a sample `.pdf`, `.docx`, or `.txt` CV under **10MB** with target role
+- [ ] Confirm response shows overall score, category scores, strengths, weaknesses, and checklist
+- [ ] Submit a valid video link with transcript/summary (combined min 80 chars)
+- [ ] Confirm Video CV result includes practical next actions + rewritten bullets/opening script
+- [ ] Try invalid input (bad URL/unsupported file) and verify graceful validation without server crash

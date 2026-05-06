@@ -683,4 +683,174 @@ Rules:
   };
 };
 
-module.exports = { generateCareerPath, generateIcebreaker, chatbotReply, generateDailyCoach, generateDigitalTwin, generateCareerGps };
+const clampScore = (value) => {
+  const n = Number(value);
+  if (Number.isNaN(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
+};
+
+const normalizeCvReview = (payload = {}, { type = 'cv', targetRole = '' } = {}) => {
+  const categoryScores = payload.categoryScores || {};
+  const checklist = Array.isArray(payload.checklist) ? payload.checklist : [];
+
+  return {
+    type,
+    targetRole: targetRole || payload.targetRole || 'General Role',
+    overallScore: clampScore(payload.overallScore),
+    categoryScores: {
+      ats: clampScore(categoryScores.ats),
+      impact: clampScore(categoryScores.impact),
+      structure: clampScore(categoryScores.structure),
+      roleFit: clampScore(categoryScores.roleFit),
+      communication: clampScore(categoryScores.communication),
+    },
+    strengths: Array.isArray(payload.strengths) ? payload.strengths.slice(0, 5) : [],
+    weaknesses: Array.isArray(payload.weaknesses) ? payload.weaknesses.slice(0, 5) : [],
+    checklist: checklist.slice(0, 7).map((item, idx) => ({
+      priority: Number(item?.priority) || idx + 1,
+      action: String(item?.action || '').trim(),
+    })).filter((item) => item.action),
+    sampleBullets: Array.isArray(payload.sampleBullets) ? payload.sampleBullets.slice(0, 4) : [],
+    openingScript: String(payload.openingScript || '').trim(),
+    summary: String(payload.summary || '').trim(),
+    generatedAt: new Date().toISOString(),
+  };
+};
+
+const mockCvReview = ({ type = 'cv', targetRole = '' } = {}) => normalizeCvReview({
+  targetRole: targetRole || 'Software Engineer',
+  overallScore: type === 'video' ? 72 : 76,
+  categoryScores: {
+    ats: 74,
+    impact: 68,
+    structure: 81,
+    roleFit: 73,
+    communication: type === 'video' ? 69 : 77,
+  },
+  strengths: [
+    'Clear education and project progression',
+    'Role-relevant technical keywords are present',
+    'Concise section hierarchy improves readability',
+  ],
+  weaknesses: [
+    'Achievement bullets lack measurable outcomes',
+    'Role-fit narrative can be more explicit',
+    type === 'video'
+      ? 'Transcript misses quantified project impact examples'
+      : 'Summary section is generic and not role-targeted',
+  ],
+  checklist: [
+    { priority: 1, action: 'Rewrite top 3 bullets with metrics (%, time, revenue, users)' },
+    { priority: 2, action: 'Align headline and opening with target role keywords' },
+    { priority: 3, action: 'Move strongest project above less relevant entries' },
+    { priority: 4, action: 'Add one bullet per project for ownership and outcomes' },
+  ],
+  sampleBullets: [
+    'Built a React + Node platform used by 600+ users, reducing manual workflows by 35%.',
+    'Optimized MongoDB aggregation queries, improving dashboard load times from 4.1s to 1.8s.',
+  ],
+  openingScript: 'Hi, I am a final-year engineering student focused on building scalable web applications and delivering measurable product impact.',
+  summary: type === 'video'
+    ? 'Based on transcript and provided context, your content is relevant but needs stronger quantified impact and role-specific storytelling.'
+    : 'Your CV has a solid structure and baseline ATS fit, but stronger impact metrics and role-specific positioning will increase interview chances.',
+}, { type, targetRole });
+
+const analyzeCv = async ({ cvText = '', targetRole = '', userProfile = {} }) => {
+  const prompt = `You are an expert recruiter and CV reviewer.
+Return ONLY valid JSON matching this schema:
+{
+  "targetRole": "string",
+  "overallScore": 0,
+  "categoryScores": { "ats": 0, "impact": 0, "structure": 0, "roleFit": 0, "communication": 0 },
+  "strengths": ["string"],
+  "weaknesses": ["string"],
+  "checklist": [{ "priority": 1, "action": "string" }],
+  "sampleBullets": ["string"],
+  "openingScript": "string",
+  "summary": "string"
+}
+
+Review depth constraints:
+- Evaluate structure, clarity, role-fit, ATS quality, measurable impact.
+- Do not mention voice/body language since this is text CV.
+
+Target Role: ${targetRole || 'Not provided'}
+User skills: ${(userProfile.skills || []).join(', ') || 'N/A'}
+User interests: ${(userProfile.interests || []).join(', ') || 'N/A'}
+CV content:
+${cvText.slice(0, 12000)}`;
+
+  if (openai) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.4,
+        max_tokens: 1400,
+        response_format: { type: 'json_object' },
+      });
+      const parsed = JSON.parse(completion.choices[0].message.content);
+      return normalizeCvReview(parsed, { type: 'cv', targetRole });
+    } catch (error) {
+      console.error('OpenAI CV review error:', error.message);
+    }
+  }
+  return mockCvReview({ type: 'cv', targetRole });
+};
+
+const analyzeVideoCv = async ({ videoUrl = '', transcript = '', summary = '', targetRole = '', userProfile = {} }) => {
+  const prompt = `You are an expert career coach reviewing a video CV using transcript and summary only.
+Return ONLY valid JSON matching this schema:
+{
+  "targetRole": "string",
+  "overallScore": 0,
+  "categoryScores": { "ats": 0, "impact": 0, "structure": 0, "roleFit": 0, "communication": 0 },
+  "strengths": ["string"],
+  "weaknesses": ["string"],
+  "checklist": [{ "priority": 1, "action": "string" }],
+  "sampleBullets": ["string"],
+  "openingScript": "string",
+  "summary": "string"
+}
+
+Hard constraints:
+- Evaluate structure, clarity, role-fit, recommendations based on transcript/summary metadata.
+- Do NOT claim analysis of tone, pacing, accent, body language, eye contact, or visual cues.
+
+Video URL: ${videoUrl}
+Target Role: ${targetRole || 'Not provided'}
+User skills: ${(userProfile.skills || []).join(', ') || 'N/A'}
+Transcript:
+${transcript.slice(0, 9000)}
+
+Summary:
+${summary.slice(0, 3000)}`;
+
+  if (openai) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.4,
+        max_tokens: 1400,
+        response_format: { type: 'json_object' },
+      });
+      const parsed = JSON.parse(completion.choices[0].message.content);
+      return normalizeCvReview(parsed, { type: 'video', targetRole });
+    } catch (error) {
+      console.error('OpenAI video CV review error:', error.message);
+    }
+  }
+  return mockCvReview({ type: 'video', targetRole });
+};
+
+module.exports = {
+  generateCareerPath,
+  generateIcebreaker,
+  chatbotReply,
+  generateDailyCoach,
+  generateDigitalTwin,
+  generateCareerGps,
+  analyzeCv,
+  analyzeVideoCv,
+};

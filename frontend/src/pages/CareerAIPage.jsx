@@ -15,6 +15,8 @@ const AI_LOADING_STEPS = [
 
 const SKILLS_LIST = ['JavaScript', 'Python', 'React', 'Node.js', 'SQL', 'Machine Learning', 'Java', 'AWS', 'Docker', 'TypeScript', 'Go', 'Figma', 'Data Analysis'];
 const TIMELINES = ['3 months', '6 months', '1 year', '2 years'];
+const MAX_CV_SIZE_MB = 10;
+const MIN_VIDEO_CONTEXT_CHARS = 80;
 
 const ChatMessage = ({ msg, index = 0 }) => (
   <motion.div
@@ -206,6 +208,100 @@ const CareerPathResults = ({ data }) => {
   );
 };
 
+const CvVideoAnalyzerResults = ({ result }) => {
+  if (!result) return null;
+  const categories = [
+    ['ATS', result.categoryScores?.ats],
+    ['Impact', result.categoryScores?.impact],
+    ['Structure', result.categoryScores?.structure],
+    ['Role Fit', result.categoryScores?.roleFit],
+    ['Communication', result.categoryScores?.communication],
+  ];
+
+  return (
+    <div className="flex-col gap-16">
+      <div className="card card-p" style={{ borderLeft: '3px solid var(--accent)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+              {result.type === 'video' ? 'Video CV Analysis' : 'CV Analysis'}
+            </div>
+            <div style={{ marginTop: '6px', fontWeight: 700, fontSize: '20px' }}>
+              Overall Score: {result.overallScore}%
+            </div>
+          </div>
+          <div className="tag tag-cyan">{result.targetRole || 'General Role'}</div>
+        </div>
+        <div className="progress-bar" style={{ marginTop: '12px' }}>
+          <div className="progress-fill" style={{ width: `${result.overallScore}%` }} />
+        </div>
+        {!!result.summary && <p style={{ marginTop: '12px', color: 'var(--text-secondary)', fontSize: '14px' }}>{result.summary}</p>}
+      </div>
+
+      <div className="grid-2">
+        {categories.map(([label, score]) => (
+          <div key={label} className="card card-p">
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{label}</span>
+              <span style={{ fontWeight: 700 }}>{score ?? 0}%</span>
+            </div>
+            <div className="progress-bar">
+              <div className="progress-fill" style={{ width: `${score ?? 0}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid-2">
+        <div className="card card-p">
+          <h3 style={{ marginBottom: '10px' }}>✅ Top Strengths</h3>
+          <ul style={{ listStyle: 'none', display: 'grid', gap: '8px' }}>
+            {(result.strengths || []).map((item, idx) => (
+              <li key={idx} style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>• {item}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="card card-p">
+          <h3 style={{ marginBottom: '10px' }}>⚠️ Top Weaknesses</h3>
+          <ul style={{ listStyle: 'none', display: 'grid', gap: '8px' }}>
+            {(result.weaknesses || []).map((item, idx) => (
+              <li key={idx} style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>• {item}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <div className="card card-p">
+        <h3 style={{ marginBottom: '10px' }}>🧭 Prioritized Next Actions</h3>
+        <ul style={{ listStyle: 'none', display: 'grid', gap: '8px' }}>
+          {(result.checklist || []).map((item, idx) => (
+            <li key={idx} style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+              {item.priority}. {item.action}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="grid-2">
+        <div className="card card-p">
+          <h3 style={{ marginBottom: '10px' }}>✍️ Rewritten Sample Bullets</h3>
+          <ul style={{ listStyle: 'none', display: 'grid', gap: '8px' }}>
+            {(result.sampleBullets || []).map((item, idx) => (
+              <li key={idx} style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>• {item}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="card card-p">
+          <h3 style={{ marginBottom: '10px' }}>🎤 Opening Script</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.6 }}>
+            {result.openingScript || 'No opening script generated.'}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function CareerAIPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -222,6 +318,14 @@ export default function CareerAIPage() {
   const [gpsTargetRole, setGpsTargetRole] = useState(user?.goals || user?.careerInterests?.[0] || '');
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsData, setGpsData] = useState(null);
+  const [cvFile, setCvFile] = useState(null);
+  const [cvTargetRole, setCvTargetRole] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoTranscript, setVideoTranscript] = useState('');
+  const [videoSummary, setVideoSummary] = useState('');
+  const [videoTargetRole, setVideoTargetRole] = useState('');
+  const [analyzerLoading, setAnalyzerLoading] = useState(false);
+  const [analyzerResult, setAnalyzerResult] = useState(null);
   const bottomRef = useRef(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -266,6 +370,71 @@ export default function CareerAIPage() {
     }
   };
 
+  const handleCvReview = async () => {
+    if (!cvFile) {
+      toast.error('Upload a CV file first');
+      return;
+    }
+    const allowedTypes = [
+      'application/pdf',
+      'text/plain',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (!allowedTypes.includes(cvFile.type)) {
+      toast.error('Unsupported format. Use PDF, DOCX, or TXT');
+      return;
+    }
+    if (cvFile.size > MAX_CV_SIZE_MB * 1024 * 1024) {
+      toast.error(`Max file size is ${MAX_CV_SIZE_MB}MB`);
+      return;
+    }
+
+    setAnalyzerLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('cv', cvFile);
+      formData.append('targetRole', cvTargetRole.trim());
+
+      const res = await api.post('/ai/cv-review', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setAnalyzerResult(res.data.data);
+      toast.success('CV analysis ready');
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'CV analysis failed');
+    } finally {
+      setAnalyzerLoading(false);
+    }
+  };
+
+  const handleVideoCvReview = async () => {
+    const contextLength = `${videoTranscript}${videoSummary}`.trim().length;
+    if (!videoUrl.trim()) {
+      toast.error('Video link is required');
+      return;
+    }
+    if (contextLength < MIN_VIDEO_CONTEXT_CHARS) {
+      toast.error(`Add at least ${MIN_VIDEO_CONTEXT_CHARS} chars of transcript/summary`);
+      return;
+    }
+
+    setAnalyzerLoading(true);
+    try {
+      const res = await api.post('/ai/video-cv-review', {
+        videoUrl: videoUrl.trim(),
+        transcript: videoTranscript.trim(),
+        summary: videoSummary.trim(),
+        targetRole: videoTargetRole.trim(),
+      });
+      setAnalyzerResult(res.data.data);
+      toast.success('Video CV analysis ready');
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Video CV analysis failed');
+    } finally {
+      setAnalyzerLoading(false);
+    }
+  };
+
   return (
     <div className="page-wide animate-fade" style={{ padding: '32px' }}>
       <div className="page-hero" style={{ marginBottom: '28px' }}>
@@ -274,7 +443,7 @@ export default function CareerAIPage() {
       </div>
 
       <motion.div style={{ display: 'flex', gap: '8px', marginBottom: '28px' }} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-        {[{ id: 'generator', label: '🎯 Career Path Generator' }, { id: 'gps', label: '🧭 Career GPS' }, { id: 'chat', label: '💬 CareerBot Chat' }].map(t => (
+        {[{ id: 'generator', label: '🎯 Career Path Generator' }, { id: 'gps', label: '🧭 Career GPS' }, { id: 'analyzer', label: '📄 CV / Video Analyzer' }, { id: 'chat', label: '💬 CareerBot Chat' }].map(t => (
           <motion.button key={t.id} onClick={() => setTab(t.id)} className="btn" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} style={{ background: tab === t.id ? 'rgba(124,58,237,0.2)' : 'var(--bg-card)', color: tab === t.id ? 'var(--accent-light)' : 'var(--text-secondary)', border: `1px solid ${tab === t.id ? 'var(--accent)' : 'var(--border)'}` }}>{t.label}</motion.button>
         ))}
       </motion.div>
@@ -477,6 +646,115 @@ export default function CareerAIPage() {
             {['How to prepare for FAANG interviews?', 'Best skills to learn in 2025?', 'How to negotiate salary?'].map(q => (
               <button key={q} onClick={() => { setChatInput(q); }} className="btn btn-secondary btn-sm" style={{ fontSize: '12px' }}>{q}</button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {tab === 'analyzer' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '24px', alignItems: 'start' }}>
+          <div className="flex-col gap-16">
+            <div className="card card-p">
+              <h3 style={{ marginBottom: '10px' }}>Section A: CV Upload</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                Accepted: PDF/DOCX/TXT up to {MAX_CV_SIZE_MB}MB (V1 limit).
+              </p>
+              <div className="form-group">
+                <label className="label">CV File</label>
+                <input
+                  type="file"
+                  className="input"
+                  accept=".pdf,.docx,.txt"
+                  onChange={(e) => setCvFile(e.target.files?.[0] || null)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="label">Target Role (optional)</label>
+                <input
+                  className="input"
+                  placeholder="e.g. Backend Engineer"
+                  value={cvTargetRole}
+                  onChange={(e) => setCvTargetRole(e.target.value)}
+                />
+              </div>
+              <button type="button" className="btn btn-primary btn-full" disabled={analyzerLoading || !cvFile} onClick={handleCvReview}>
+                {analyzerLoading ? <><span className="spinner spinner-sm" /> Analysing…</> : 'Analyze CV'}
+              </button>
+            </div>
+
+            <div className="card card-p">
+              <h3 style={{ marginBottom: '10px' }}>Section B: Video CV</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                For large files, share video link + transcript/summary (minimum {MIN_VIDEO_CONTEXT_CHARS} chars combined).
+              </p>
+              <div className="form-group">
+                <label className="label">Video Link</label>
+                <input
+                  className="input"
+                  placeholder="https://..."
+                  value={videoUrl}
+                  onChange={(e) => setVideoUrl(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="label">Transcript</label>
+                <textarea
+                  className="input"
+                  placeholder="Paste transcript text..."
+                  value={videoTranscript}
+                  onChange={(e) => setVideoTranscript(e.target.value)}
+                  style={{ minHeight: '100px' }}
+                />
+              </div>
+              <div className="form-group">
+                <label className="label">Summary</label>
+                <textarea
+                  className="input"
+                  placeholder="Short summary if transcript is partial..."
+                  value={videoSummary}
+                  onChange={(e) => setVideoSummary(e.target.value)}
+                  style={{ minHeight: '80px' }}
+                />
+              </div>
+              <div className="form-group">
+                <label className="label">Target Role (optional)</label>
+                <input
+                  className="input"
+                  placeholder="e.g. Product Analyst"
+                  value={videoTargetRole}
+                  onChange={(e) => setVideoTargetRole(e.target.value)}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-full"
+                disabled={analyzerLoading || !videoUrl.trim() || (`${videoTranscript}${videoSummary}`.trim().length < MIN_VIDEO_CONTEXT_CHARS)}
+                onClick={handleVideoCvReview}
+              >
+                {analyzerLoading ? <><span className="spinner spinner-sm" /> Analysing…</> : 'Analyze Video CV'}
+              </button>
+            </div>
+
+            <div className="card card-p" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              V1 scope note: this analysis focuses on structure, clarity, role-fit, and recommendations from transcript/summary context. It does not evaluate voice tone, pacing, or body language.
+            </div>
+          </div>
+
+          <div>
+            {!analyzerResult && !analyzerLoading && (
+              <div className="empty-state card card-p" style={{ minHeight: '420px' }}>
+                <span style={{ fontSize: '56px' }}>📄</span>
+                <h3 style={{ marginTop: '8px' }}>CV / Video Analyzer</h3>
+                <p style={{ marginTop: '8px', maxWidth: '460px' }}>
+                  Upload your CV or submit a video link with transcript/summary to get a scored review and a practical action checklist.
+                </p>
+              </div>
+            )}
+            {analyzerLoading && (
+              <div className="card card-p">
+                <AILoadingStepper />
+              </div>
+            )}
+            {!analyzerLoading && analyzerResult && <CvVideoAnalyzerResults result={analyzerResult} />}
           </div>
         </div>
       )}
