@@ -332,7 +332,7 @@ export default function RegisterPage() {
 
             {/* Expires note */}
             <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
-              ⏱ Code expires in 5 minutes
+              ⏱ Code expires in 10 minutes
             </p>
 
             {/* Verify button */}

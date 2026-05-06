@@ -81,14 +81,20 @@ exports.sendOtp = async (req, res, next) => {
       return res.json({ success: true, message: `OTP sent to ${email}` });
     }
 
+    // Email service not configured — OTP is in backend logs (dev/fallback mode)
     return res.json({
       success: true,
-      message: `OTP generated successfully. Check the backend logs for the verification code.`,
+      message: 'OTP generated. Check the backend logs for the verification code (email service not configured).',
     });
   } catch (error) {
+    // Gmail auth failure (now caught because sendMail is properly awaited)
     if (error.code === 'EAUTH' || error.responseCode === 535) {
-      return res.status(503).json({ success: false, message: 'Gmail authentication failed. Check GMAIL_USER and GMAIL_APP_PASSWORD in .env' });
+      return res.status(503).json({
+        success: false,
+        message: 'Gmail authentication failed. Ensure GMAIL_USER and GMAIL_APP_PASSWORD are set correctly in Render environment variables.',
+      });
     }
+    console.error('[sendOtp] Error:', error.message);
     return res.status(503).json({ success: false, message: error.message || 'Failed to send OTP. Check email configuration.' });
   }
 };
@@ -101,11 +107,13 @@ exports.verifyOtp = async (req, res, next) => {
     const { email, otp } = req.body;
     if (!email || !otp) return res.status(400).json({ success: false, message: 'Email and OTP are required' });
 
-    const result = emailService.verifyOtp(email, otp);
+    // verifyOtp is now async (MongoDB lookup)
+    const result = await emailService.verifyOtp(email, otp);
     if (!result.valid) return res.status(400).json({ success: false, message: result.message });
 
     res.json({ success: true, message: 'Email verified successfully' });
   } catch (error) {
+    console.error('[verifyOtp] Error:', error.message);
     next(error);
   }
 };
