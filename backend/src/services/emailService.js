@@ -1,54 +1,50 @@
 /**
- * Email Service — sends OTPs via Gmail SMTP using Nodemailer
+ * Email Service — sends OTPs via Resend API (HTTPS, works on Render/cloud)
  *
- * OTPs are persisted in MongoDB (OtpVerification collection) so they survive
- * server restarts on Render free tier. A MongoDB TTL index auto-deletes them
- * after 10 minutes.
+ * Why Resend instead of Gmail SMTP?
+ *   Render (and most cloud providers) block outbound SMTP ports (587/465).
+ *   Resend uses HTTPS so it works everywhere.
  *
- * Environment variables required on Render:
- *   GMAIL_USER          — your Gmail address
- *   GMAIL_APP_PASSWORD  — 16-char App Password (NOT your real password)
- *   Generate one at: https://myaccount.google.com/apppasswords (needs 2FA)
+ * Setup (free, 3 000 emails/month):
+ *   1. Sign up at https://resend.com
+ *   2. Go to API Keys → Create API Key
+ *   3. Add RESEND_API_KEY to Render environment variables
+ *
+ * OTPs are persisted in MongoDB (OtpVerification collection) with a TTL index
+ * so they survive server restarts on Render's free tier.
  */
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const OtpVerification = require('../models/OtpVerification');
 
-const getTransporter = () => {
-  const user = (process.env.GMAIL_USER || '').trim();
-  const pass = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
-
-  if (!user || !pass) {
-    console.warn('[EmailService] GMAIL_USER or GMAIL_APP_PASSWORD not set in environment variables.');
+const getResend = () => {
+  const key = (process.env.RESEND_API_KEY || '').trim();
+  if (!key || key === 're_your_api_key_here') {
+    console.warn('[EmailService] RESEND_API_KEY not set — falling back to console log mode.');
     return null;
   }
-
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user, pass },
-  });
+  return new Resend(key);
 };
 
 /**
- * Generate a 6-digit OTP, persist it to MongoDB, and email it.
- * Throws on Gmail auth failure so the controller can return a meaningful error.
+ * Generate a 6-digit OTP, persist it to MongoDB, and email it via Resend.
+ * Throws on API failure so the controller can return a meaningful error.
  */
 exports.sendOtp = async (email) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const key = email.toLowerCase();
 
-  // Upsert into MongoDB (replace any existing OTP for this email)
+  // Upsert into MongoDB — replace any existing OTP for this email
   await OtpVerification.findOneAndUpdate(
     { email: key },
     { otp, createdAt: new Date() },
     { upsert: true, new: true }
   );
 
-  const transporter = getTransporter();
-  if (transporter) {
-    // Properly awaited — Gmail errors now propagate to the calling controller
-    await transporter.sendMail({
-      from: `"AlumniConnect AI" <${process.env.GMAIL_USER}>`,
-      to: email,
+  const resend = getResend();
+  if (resend) {
+    const { error } = await resend.emails.send({
+      from: 'AlumniConnect AI <onboarding@resend.dev>',
+      to: [email],
       subject: '🎓 Your AlumniConnect Verification Code',
       html: `
         <div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;background:#080b14;color:#f1f5f9;padding:40px;border-radius:16px;border:1px solid rgba(255,255,255,0.08);">
@@ -64,12 +60,18 @@ exports.sendOtp = async (email) => {
         </div>
       `,
     });
-    console.log(`[EmailService] OTP email sent to ${email}`);
+
+    if (error) {
+      console.error('[EmailService] Resend API error:', error);
+      throw new Error(error.message || 'Failed to send email via Resend');
+    }
+
+    console.log(`[EmailService] OTP email sent to ${email} via Resend`);
     return { delivered: true };
   }
 
-  // Fallback: no SMTP configured — log the OTP for manual use (dev/testing only)
-  console.warn(`[EmailService] Email service not configured. OTP for ${email}: ${otp}`);
+  // Fallback: no API key — log OTP for manual use (dev/testing only)
+  console.warn(`[EmailService] No RESEND_API_KEY set. OTP for ${email}: ${otp}`);
   return { delivered: false, otp };
 };
 
