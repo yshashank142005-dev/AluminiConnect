@@ -14,7 +14,9 @@ try {
   mammoth = require('mammoth');
 } catch (_e) {}
 try {
-  pdfParse = require('pdf-parse');
+  const pdfParseModule = require('pdf-parse');
+  // pdf-parse v2.x exports { default: fn }, v1.x exports the fn directly
+  pdfParse = pdfParseModule?.default ?? pdfParseModule;
 } catch (_e) {}
 
 // In-memory daily coach cache (resets on server restart, refreshes daily)
